@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capture — Station 849</title>
+  <link rel="manifest" href="capture.webmanifest">
+  <meta name="theme-color" content="#4D148C">
+  <link rel="apple-touch-icon" href="icons/capture-icon-192.png">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    .back-link {
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: color 0.12s;
+    }
+    .back-link:hover { color: white; }
+
+    .sync-status { font-size: 12px; font-weight: 700; color: #fff; opacity: 0.95; white-space: nowrap; }
+    .sync-status.ok      { color: #bbf7d0; }
+    .sync-status.dirty   { color: #fde68a; }
+    .sync-status.error   { color: #fecaca; }
+    .sync-status.syncing { color: #e9d5ff; }
+
+    .panel {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .panel-header { padding: 14px 20px; border-bottom: 1px solid var(--border-soft); }
+    .panel-header h2 { font-size: 15px; font-weight: 700; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+    .field input {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--field-bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+    }
+    .form-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+    .btn { border: none; border-radius: 6px; font-weight: 600; font-size: 13px; padding: 8px 16px; cursor: pointer; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover { background: #3d1070; }
+    .btn-gray { background: var(--field-bg); color: var(--text); border: 1px solid var(--border-strong); }
+    .btn-gray:hover { background: var(--hover-soft); }
+
+    .intro {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    main { max-width: 640px; margin: 0 auto; }
+
+    .capture-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      margin-bottom: 20px;
+    }
+
+    #capture-text {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--field-bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 12px;
+      line-height: 1.5;
+    }
+    #capture-text:focus { outline: none; border-color: #4D148C; }
+
+    .capture-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    #save-btn {
+      border: none;
+      border-radius: 6px;
+      background: #4D148C;
+      color: white;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 9px 18px;
+      cursor: pointer;
+    }
+    #save-btn:hover { background: #3d1070; }
+    #save-btn:disabled { background: var(--border-strong); cursor: default; }
+
+    .list-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+    }
+    .list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .list-head h2 { font-size: 15px; font-weight: 700; }
+    #capture-count { font-size: 12px; color: var(--text-muted); }
+
+    .empty-note {
+      font-size: 13px;
+      color: var(--text-faint);
+      padding: 8px 0;
+    }
+
+    ul#capture-list { list-style: none; }
+    li.capture-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    li.capture-item:last-child { border-bottom: none; }
+    .capture-body { flex: 1; min-width: 0; }
+    .capture-text {
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .capture-time {
+      font-size: 11px;
+      color: var(--text-faint);
+      margin-top: 4px;
+    }
+    .delete-btn {
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      background: var(--field-bg);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .delete-btn:hover { background: var(--hover-soft); color: #dc2626; border-color: #dc2626; }
+
+    .followup-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .followup-toggle-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+    .followup-toggle-row label { cursor: pointer; }
+
+    .followups-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      border-left: 3px solid #4D148C;
+    }
+    .followups-card .list-head h2 { color: #4D148C; }
+    ul#followup-list { list-style: none; }
+    li.followup-item {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    li.followup-item:last-child { border-bottom: none; }
+    .followup-text {
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .followup-meta {
+      font-size: 11px;
+      color: var(--text-faint);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .stale-badge {
+      display: inline-block;
+      background: #dc2626;
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+    .resolve-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .resolve-row input[type="text"] {
+      flex: 1;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      background: var(--field-bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 6px 10px;
+    }
+    .resolve-btn {
+      border: none;
+      border-radius: 5px;
+      background: #4D148C;
+      color: white;
+      font-weight: 600;
+      font-size: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .resolve-btn:hover { background: #3d1070; }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:14px">
+      <a class="back-link" href="https://tylerm08martinez-wq.github.io/station-dashboard/">&larr; Dashboard</a>
+      <a href="#" class="back-link" onclick="toggleSettings();return false;">&#9881; Settings</a>
+      <h1>Capture</h1>
+    </div>
+    <span id="sync-status" class="sync-status" title="Sync status"></span>
+  </header>
+
+  <main>
+    <div class="panel" id="settings-panel" style="display:none">
+      <div class="panel-header"><h2>Sync Settings</h2></div>
+      <div style="padding:16px 20px">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+          Paste a <b>fine-grained Personal Access Token</b> scoped to your private data repo with
+          <b>Contents: Read and write</b>, then enter where the data lives. All values are stored
+          <b>only in this browser</b>; nothing is baked into this page or committed.
+        </p>
+        <div class="field">
+          <label for="f-token">GitHub Token</label>
+          <input type="password" id="f-token" placeholder="github_pat_&hellip;" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-owner">Repo Owner</label>
+          <input type="text" id="f-owner" placeholder="your GitHub username" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="f-repo">Repo Name</label>
+          <input type="text" id="f-repo" placeholder="your private data repo" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="f-branch">Data Branch</label>
+          <input type="text" id="f-branch" placeholder="your data branch" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-purple" onclick="saveSettings()">Save</button>
+          <button type="button" class="btn btn-gray" onclick="clearSettings()">Remove</button>
+          <span id="token-msg" style="font-size:12px;font-weight:600;color:#16a34a"></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="intro">
+      Jot a one-line observation, idea, or open question in the flow of a sort — nothing to
+      classify, nothing to decide. It's timestamped automatically and saved right away.
+    </p>
+
+    <section class="followups-card" id="followups-card" style="display:none">
+      <div class="list-head">
+        <h2>Follow-ups</h2>
+        <span id="followup-count"></span>
+      </div>
+      <ul id="followup-list"></ul>
+    </section>
+
+    <section class="capture-card">
+      <textarea id="capture-text" placeholder="What's worth remembering?" aria-label="New capture"></textarea>
+      <div class="followup-toggle-row">
+        <input type="checkbox" id="followup-toggle" aria-label="Check tomorrow">
+        <label for="followup-toggle">Check tomorrow (mark this a Follow-up)</label>
+      </div>
+      <div class="capture-actions">
+        <button type="button" id="save-btn">Save</button>
+      </div>
+    </section>
+
+    <section class="list-card">
+      <div class="list-head">
+        <h2>Recent captures</h2>
+        <span id="capture-count"></span>
+      </div>
+      <div id="capture-list-host">
+        <p class="empty-note" id="empty-note">No captures yet — the first one you save shows up here.</p>
+        <ul id="capture-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="lib/tool-helpers.js"></script>
+  <script src="lib/captures.js"></script>
+  <script src="lib/github-json-sync.js"></script>
+  <script src="lib/captures-sync.js"></script>
+  <script src="lib/sync-controller.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    const $ = (id) => document.getElementById(id);
+    const esc = ToolHelpers.escapeHtml;
+
+    // Quick-Capture slice 1 (issue #349): freeform capture -> localStorage ->
+    // recent list. Slice 3 (issue #351) adds cross-device sync on top,
+    // lifecycle owned by lib/sync-controller.js (ADR-0014) — see the SYNC
+    // section below. STORAGE_KEY mirrors the other tools' single-JSON-blob-
+    // under-one-key convention (e.g. AddressCatcherSession.STORAGE_KEY in
+    // address-catcher.html).
+    const STORAGE_KEY = 'captures_pile';
+
+    function loadCaptures() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return []; // private mode / corrupted JSON — start clean rather than throw
+      }
+    }
+
+    function persistCaptures() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(captures));
+      } catch (e) { /* private mode / quota — captures still work this session */ }
+    }
+
+    let captures = loadCaptures();
+
+    function formatTimestamp(iso) {
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+    }
+
+    function renderFollowups() {
+      const pending = Captures.pendingFollowUps(captures, Date.now());
+      const card = $('followups-card');
+      card.style.display = pending.length ? '' : 'none';
+      $('followup-count').textContent = pending.length
+        ? pending.length + ' pending'
+        : '';
+
+      const list = $('followup-list');
+      list.innerHTML = pending.map(function (c) {
+        return '<li class="followup-item" data-id="' + esc(c.id) + '">' +
+          '<div class="followup-text">' + esc(c.text) + '</div>' +
+          '<div class="followup-meta">' +
+            '<span>flagged ' + esc(formatTimestamp(c.createdAt)) + '</span>' +
+            (c.stale ? '<span class="stale-badge">Stale</span>' : '') +
+          '</div>' +
+          '<div class="resolve-row">' +
+            '<input type="text" class="outcome-input" data-id="' + esc(c.id) + '" placeholder="Outcome (optional)" aria-label="Outcome for this Follow-up">' +
+            '<button type="button" class="resolve-btn" data-id="' + esc(c.id) + '">Resolve</button>' +
+          '</div>' +
+        '</li>';
+      }).join('');
+
+      Array.prototype.forEach.call(list.querySelectorAll('.resolve-btn'), function (btn) {
+        btn.addEventListener('click', function () {
+          const id = btn.getAttribute('data-id');
+          const item = btn.closest('li.followup-item');
+          const input = item ? item.querySelector('.outcome-input') : null;
+          resolveFollowup(id, input ? input.value : '');
+        });
+      });
+    }
+
+    function render() {
+      const active = Captures.activeCaptures(captures);
+      $('capture-count').textContent = active.length
+        ? active.length + ' capture' + (active.length === 1 ? '' : 's')
+        : '';
+
+      $('empty-note').style.display = active.length ? 'none' : '';
+
+      const list = $('capture-list');
+      list.innerHTML = active.map(function (c) {
+        return '<li class="capture-item" data-id="' + esc(c.id) + '">' +
+          '<div class="capture-body">' +
+            '<div class="capture-text">' + esc(c.text) + '</div>' +
+            '<div class="capture-time">' + esc(formatTimestamp(c.createdAt)) + '</div>' +
+          '</div>' +
+          '<button type="button" class="delete-btn" data-id="' + esc(c.id) + '">Delete</button>' +
+        '</li>';
+      }).join('');
+
+      Array.prototype.forEach.call(list.querySelectorAll('.delete-btn'), function (btn) {
+        btn.addEventListener('click', function () {
+          deleteCapture(btn.getAttribute('data-id'));
+        });
+      });
+
+      renderFollowups();
+    }
+
+    function saveCapture() {
+      const textarea = $('capture-text');
+      const toggle = $('followup-toggle');
+      const capture = Captures.create(textarea.value, { followUp: toggle.checked });
+      if (!capture) {
+        // Whitespace-only save: do nothing, keep focus in the box (AC).
+        textarea.focus();
+        return;
+      }
+      captures.push(capture);
+      persistCaptures();
+      textarea.value = '';
+      toggle.checked = false;
+      textarea.focus();
+      render();
+      scheduleSync();
+    }
+
+    function deleteCapture(id) {
+      captures = captures.map(function (c) {
+        return c && c.id === id ? Captures.remove(c) : c;
+      });
+      persistCaptures();
+      render();
+      scheduleSync();
+    }
+
+    function resolveFollowup(id, outcome) {
+      captures = captures.map(function (c) {
+        return c && c.id === id ? Captures.resolve(c, outcome) : c;
+      });
+      persistCaptures();
+      render();
+      scheduleSync();
+    }
+
+    $('save-btn').addEventListener('click', saveCapture);
+    $('capture-text').addEventListener('keydown', function (e) {
+      // Enter saves, Shift+Enter inserts a newline (freeform text may span
+      // lines — only plain Enter is the "quick save" affordance).
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        saveCapture();
+      }
+    });
+
+    // ─── SYNC (issue #351) — lifecycle lives in lib/sync-controller.js ───────
+    // Mirrors time-off-log.html's wiring (ADR-0014): the page supplies only
+    // the adapter (built on lib/captures-sync.js), getLocal/setLocal
+    // closures, and vocabulary. No device-local field needs stripping before
+    // PUT (see lib/captures-sync.js's module note), so setLocal is a plain
+    // assign + persist + render, and the adapter's push needs no `project`.
+    const toolStorage = ToolHelpers.createStorage();
+    const TOKEN_KEY  = 'captures_gh_token';
+    const COORDS_KEY = 'captures_repo_coords';
+    const SHA_KEY    = 'captures_gh_sha';
+
+    function setStatus(kind, text) {
+      // `document` can be gone when a sync continuation outlives the page
+      // (jsdom window.close() in DOM tests); a dead page needs no update.
+      if (typeof document === 'undefined' || !document) return;
+      const el = document.getElementById('sync-status');
+      if (el) { el.className = 'sync-status ' + kind; el.textContent = text; }
+    }
+
+    const syncCtl = SyncController.create({
+      storage: toolStorage,
+      keys: { token: TOKEN_KEY, coords: COORDS_KEY, sha: SHA_KEY },
+      setStatus: setStatus,
+      messages: {
+        offNoToken:  ['', 'sync off — add token in Settings'],
+        offNoCoords: ['', 'sync off — add repo in Settings'],
+        pushError:   () => ['error', 'offline — ' + Captures.activeCaptures(captures).length + ' local'],
+      },
+      adapter: {
+        fetch: async (token, coords) => {
+          const r = await CapturesSync.fetchRemote(token, coords);
+          return { data: r.captures, sha: r.sha };
+        },
+        push: async (token, local, sha, coords) => {
+          const r = await CapturesSync.pushMerge(token, local, sha, 3, coords);
+          return { data: r.captures, sha: r.sha };
+        },
+        mergeLocal: (remote, local) => CapturesSync.merge(local, remote),
+      },
+      getLocal: () => Captures.backfillUpdatedAt(captures),
+      setLocal: merged => { captures = merged; persistCaptures(); render(); },
+      // Only push back after the load pull if this device actually has
+      // something new — avoids an empty commit on every load.
+      pullPushBack: (local, remote) => {
+        const remoteIds = {};
+        (Array.isArray(remote) ? remote : []).forEach(c => { if (c && c.id != null) remoteIds[c.id] = c.updatedAt || ''; });
+        return (Array.isArray(local) ? local : []).some(c => {
+          if (!c || c.id == null) return false;
+          const r = remoteIds[c.id];
+          return r === undefined || (c.updatedAt || '') > r;
+        });
+      },
+    });
+
+    function scheduleSync() { syncCtl.scheduleSync(); }
+    function syncNow()      { return syncCtl.syncNow(); }
+    function pullOnLoad()   { return syncCtl.pullOnLoad(); }
+
+    // ─── SETTINGS PANEL ───────────────────────────────────────────────────
+    window.toggleSettings = function toggleSettings() {
+      const p = $('settings-panel');
+      const show = p.style.display === 'none';
+      p.style.display = show ? '' : 'none';
+      if (show) {
+        const c = syncCtl.getCoords();
+        $('f-token').value  = syncCtl.getToken();
+        $('f-owner').value  = c.owner;
+        $('f-repo').value   = c.repo;
+        $('f-branch').value = c.branch;
+      }
+    };
+    window.saveSettings = function saveSettings() {
+      const token  = $('f-token').value.trim();
+      const owner  = $('f-owner').value.trim();
+      const repo   = $('f-repo').value.trim();
+      const branch = $('f-branch').value.trim();
+      syncCtl.saveSettings({ token: token, owner: owner, repo: repo, branch: branch });
+      const msg = $('token-msg');
+      if (syncCtl.syncReady())      msg.textContent = 'Saved. Syncing…';
+      else if (token)       msg.textContent = 'Saved — add repo owner/name/branch to sync.';
+      else                  msg.textContent = 'Saved locally — add a token to sync.';
+      if (syncCtl.syncReady()) syncNow();
+    };
+    window.clearSettings = function clearSettings() {
+      syncCtl.clearSettings();
+      $('f-token').value  = '';
+      $('f-owner').value  = '';
+      $('f-repo').value   = '';
+      $('f-branch').value = '';
+      $('token-msg').textContent = 'Settings removed.';
+    };
+
+    render();
+    pullOnLoad();
+  })();
+  </script>
+</body>
+</html>
