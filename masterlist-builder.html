@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Masterlist Builder — Station 849</title>
+  <style>
+    /* Brand-ink text token (issue 393): theme.css deliberately leaves
+       FedEx purple untokenized for backgrounds/borders/pills (stays
+       meaningful in both themes), but purple TEXT on a dark surface is
+       illegible — this token is scoped to text-color uses only. */
+    :root { --brand-ink: #4D148C; }
+    html[data-theme="dark"] { --brand-ink: #c4b5fd; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    .back-link {
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: color 0.12s;
+    }
+    .back-link:hover { color: white; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    #date-label { font-size: 12px; opacity: 0.75; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:active { opacity: 0.85; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover { background: #3a0f6a; }
+    .btn-gray { background: #e4e4e7; color: #333; }
+    .btn-gray:hover { background: #d1d1d6; }
+    .btn-danger { background: #fef2f2; color: #dc2626; }
+    .btn-danger:hover { background: #fde2e2; }
+    .btn-light { background: rgba(255,255,255,0.14); color: white; }
+    .btn-light:hover { background: rgba(255,255,255,0.24); }
+    .btn-light-danger { background: rgba(255,255,255,0.1); color: #ffd9d9; }
+    .btn-light-danger:hover { background: rgba(255,80,80,0.3); color: white; }
+
+    /* Upload (CSV-first) */
+    .upload-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      margin-bottom: 20px;
+    }
+    .upload-card .field input[type="file"] {
+      padding: 8px;
+      cursor: pointer;
+    }
+    .upload-card .field input[type="file"]::file-selector-button {
+      margin-right: 10px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 5px;
+      background: #4D148C;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #csv-controls {
+      display: none;
+      align-items: end;
+      gap: 16px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-soft);
+      flex-wrap: wrap;
+    }
+    #day-picker {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--field-bg);
+      min-width: 180px;
+    }
+    #day-picker:focus {
+      outline: none;
+      border-color: #4D148C;
+      box-shadow: 0 0 0 3px rgba(77,20,140,0.12);
+    }
+    #dedup-note {
+      font-size: 12px;
+      color: var(--text-faint);
+      padding-bottom: 9px;
+    }
+    #dedup-note.has-dupes { color: #b45309; font-weight: 600; }
+
+    /* Entry form */
+    .entry-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      margin-bottom: 20px;
+    }
+    .entry-form {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1.6fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-faint);
+    }
+    .field label .req { color: #FF6200; }
+    .field input {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: #4D148C;
+      box-shadow: 0 0 0 3px rgba(77,20,140,0.12);
+    }
+    .field input.invalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.12); }
+    .add-btn { height: 38px; }
+    @media (max-width: 720px) {
+      .entry-form { grid-template-columns: 1fr; }
+      .add-btn { width: 100%; justify-content: center; }
+    }
+
+    /* Summary / total */
+    #summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 14px 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border-left: 4px solid #4D148C;
+    }
+    .stat-card .label {
+      font-size: 11px; color: var(--text-faint); text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 4px;
+    }
+    .stat-card .value { font-size: 30px; font-weight: 700; color: var(--brand-ink); line-height: 1; }
+
+    /* Workbench tabs */
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      position: sticky;
+      top: var(--header-h, 56px);
+      z-index: 5;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 5px;
+      padding: 8px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: inherit;
+      transition: background 0.12s, color 0.12s;
+    }
+    .tab-btn:hover { background: var(--surface-2); color: var(--brand-ink); }
+    .tab-btn.active { background: #4D148C; color: white; }
+    .tab-btn:disabled { color: var(--text-fainter); cursor: not-allowed; background: transparent; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Table section */
+    .section {
+      background: var(--surface);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .section-header h2 { font-size: 15px; font-weight: 700; }
+    .badge {
+      background: var(--border-soft);
+      color: var(--text-muted);
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      background: var(--surface-3);
+      padding: 9px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+    }
+    th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    th.sortable:hover { color: var(--text); background: var(--hover-soft); }
+    th.sortable.sort-active { color: var(--text); }
+    th.sortable.sort-active::after { content: ' \25B2'; font-size: 9px; color: var(--text-muted); }
+    th.sortable.sort-active.sort-desc::after { content: ' \25BC'; }
+    td {
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border-soft);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface-2); }
+    .mono { font-family: 'Consolas', 'Courier New', monospace; }
+    /* Explicit rgb() so the pill stays dark-on-light in BOTH themes. The old
+       pairing of theme-aware background: var(--hover-row) with fixed FedEx-purple
+       text went illegible on the dark theme (dark-purple-on-dark-slate, #368).
+       rgb() keeps legibility without adding to the hardcoded-hex budget. This is
+       the base used by the detail rows and the Reroutes panel; .rpt-areas /
+       .scatter below add their own accents on top. */
+    .route-pill {
+      display: inline-block;
+      background: rgb(236, 232, 255);
+      color: rgb(77, 20, 140);
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .note-text { color: var(--text-faint); font-size: 12px; }
+
+    /* Repeated addresses */
+    .rpt-toggle {
+      cursor: pointer;
+      color: var(--brand-ink);
+      font-size: 11px;
+      user-select: none;
+      display: inline-block;
+      width: 14px;
+    }
+    tr.rpt-row { cursor: pointer; }
+    .rpt-areas { white-space: normal; }
+    /* Explicit colors, same both-themes treatment as .scatter below: the base
+       .route-pill pairs a theme background with fixed FedEx-purple text, which
+       goes illegible on the dark theme. rgb() keeps these pills dark-on-light
+       in both themes without adding to the hardcoded-hex budget (307/313). */
+    .rpt-areas .route-pill {
+      margin: 1px 3px 1px 0;
+      background: rgb(236, 232, 255); color: rgb(77, 20, 140);
+      box-shadow: inset 0 0 0 1px rgba(180, 168, 230, 0.55);
+    }
+    .rpt-areas .subline {
+      display: inline-block; margin: 1px 0 1px 2px; vertical-align: middle;
+    }
+    /* Scatter: a building whose packages landed in 2+ distinct work areas — a
+       mis-sort / reroute signal worth catching at a glance (issue 309). Colors
+       use rgb()/rgba() so this stays meaningful in both themes without adding to
+       the tool's hardcoded-hex budget (307/313). */
+    .rpt-areas.scatter .route-pill {
+      background: rgba(251, 228, 213, 0.96); color: rgb(154, 52, 18);
+      box-shadow: inset 0 0 0 1px rgba(240, 168, 120, 0.9);
+    }
+    .detail-scroll { overflow-x: auto; width: 100%; }
+    .detail-table th { font-size: 10px; padding: 7px 10px; }
+    .detail-table td { padding: 7px 10px; }
+    .detail-table { min-width: 760px; }
+    .copy-track {
+      border: none;
+      background: transparent;
+      color: var(--brand-ink);
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+      font-weight: 700;
+      text-align: left;
+    }
+    .copy-track:hover { text-decoration: underline; }
+    /* issue 517: one-click FTrack lookup beside a rendered tracking number.
+       Theme tokens only, so light and dark both follow lib/theme.js. */
+    .ftrack-link { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: var(--text-faint); text-decoration: none; border: 1px solid var(--border); border-radius: 6px; padding: 0 5px; white-space: nowrap; }
+    .ftrack-link:hover { background: var(--hover-row); color: var(--text); }
+    .subline {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--text-faint);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-weight: 400;
+    }
+    tr.rpt-detail td { background: var(--surface-2); padding-top: 0; padding-bottom: 6px; }
+    .count-pill {
+      display: inline-block;
+      background: #4D148C;
+      color: white;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      min-width: 24px;
+      text-align: center;
+    }
+    .row-time { color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+    .del-btn {
+      background: none;
+      border: none;
+      color: var(--text-fainter);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .del-btn:hover { background: #fef2f2; color: #dc2626; }
+
+    /* Patterns */
+    .patterns-body { padding: 14px 18px; }
+    #patterns-input {
+      width: 100%;
+      min-height: 92px;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text);
+      resize: vertical;
+    }
+    #patterns-input:focus {
+      outline: none;
+      border-color: #4D148C;
+      box-shadow: 0 0 0 3px rgba(77,20,140,0.12);
+    }
+    .patterns-hint { font-size: 12px; color: var(--text-fainter); margin-top: 6px; }
+
+    .empty-state {
+      padding: 40px 24px;
+      text-align: center;
+      color: var(--text-fainter);
+      font-size: 14px;
+    }
+    .empty-state .big { font-size: 30px; display: block; margin-bottom: 8px; opacity: 0.6; }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-fainter);
+      margin-top: 8px;
+    }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:14px">
+    <a class="back-link" href="dashboard.html">&larr; Dashboard</a>
+    <h1>Masterlist Builder &mdash; Station 849</h1>
+  </div>
+  <div class="header-actions">
+    <span id="date-label"></span>
+    <button type="button" class="btn btn-light" id="download-btn">&#8595; Download TSV</button>
+    <button type="button" class="btn btn-light" id="download-md-btn">&#8595; Download MasterList</button>
+    <button type="button" class="btn btn-light-danger" id="newsort-btn">New Sort</button>
+  </div>
+</header>
+
+<div class="upload-card">
+  <div class="field">
+    <label for="csv-file">Manual Assignment Detail at IB Scan (CSV)</label>
+    <input type="file" id="csv-file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+  </div>
+  <div id="csv-controls">
+    <div class="field">
+      <label for="day-picker">Day</label>
+      <select id="day-picker"></select>
+    </div>
+    <span id="dedup-note"></span>
+  </div>
+</div>
+
+<div id="summary">
+  <div class="stat-card">
+    <div class="label">Grand Total</div>
+    <div class="value" id="total-count">0</div>
+  </div>
+</div>
+
+<nav class="tabs" aria-label="MasterList workbench">
+  <button type="button" class="tab-btn" data-tab="repeated">Repeated Addresses</button>
+  <button type="button" class="tab-btn" data-tab="workarea">Work Areas</button>
+  <button type="button" class="tab-btn" data-tab="user">Users</button>
+  <button type="button" class="tab-btn" data-tab="reroute">Reroutes</button>
+  <button type="button" class="tab-btn" data-tab="manual">Manual Fallback</button>
+</nav>
+
+<div class="tab-panel" data-panel="repeated">
+  <div class="section" id="repeated-section" style="display:none">
+    <div class="section-header">
+      <h2>Repeated Addresses</h2>
+      <span class="badge" id="repeated-badge">0 buildings</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:1%"></th>
+          <th data-sort="building">Base Building</th>
+          <th style="width:18%" data-sort="zip">ZIP</th>
+          <th style="width:16%">Work Areas</th>
+          <th style="width:10%" data-sort="count">Count</th>
+        </tr>
+      </thead>
+      <tbody id="repeated-body"></tbody>
+    </table>
+    <div class="empty-state" id="repeated-empty" style="display:none">
+      No repeated addresses for this day.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Patterns</h2>
+    </div>
+    <div class="patterns-body">
+      <textarea id="patterns-input" placeholder="Repeated addresses, apartments, business locations, or other patterns worth watching." spellcheck="true"></textarea>
+      <div class="patterns-hint">Included in the MasterList export. Saved locally as you type.</div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" data-panel="workarea">
+  <div class="section" id="workarea-section" style="display:none">
+    <div class="section-header">
+      <h2>Volume by Work Area</h2>
+      <span class="badge" id="workarea-badge">0 areas</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="area">Work Area</th>
+          <th style="width:10%" data-sort="count">Count</th>
+        </tr>
+      </thead>
+      <tbody id="workarea-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" data-panel="user">
+  <div class="section" id="user-section" style="display:none">
+    <div class="section-header">
+      <h2>Volume by User</h2>
+      <span class="badge" id="user-badge">0 users</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="user">User</th>
+          <th style="width:10%" data-sort="count">Count</th>
+        </tr>
+      </thead>
+      <tbody id="user-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" data-panel="reroute">
+  <div class="section" id="reroute-section" style="display:none">
+    <div class="section-header">
+      <h2>Real-Route Reroutes</h2>
+      <span class="badge" id="reroute-badge">0 reroutes</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="tracking">Tracking #</th>
+          <th style="width:14%" data-sort="origcode">Orig Code</th>
+          <th style="width:14%" data-sort="area">Work Area</th>
+          <th data-sort="address">Address</th>
+        </tr>
+      </thead>
+      <tbody id="reroute-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" data-panel="manual">
+  <div class="entry-card">
+    <form class="entry-form" id="entry-form" autocomplete="off">
+      <div class="field">
+        <label for="label-input">Tracking Number</label>
+        <input type="text" id="label-input" placeholder="e.g. 7712 3456 7890" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="route-input">Route / Area <span class="req">*</span></label>
+        <input type="text" id="route-input" placeholder="e.g. FRO-12" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="note-input">Note</label>
+        <input type="text" id="note-input" placeholder="optional" spellcheck="false">
+      </div>
+      <button type="submit" class="btn btn-purple add-btn">&#43; Add Entry</button>
+    </form>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Manual Assignments <span style="font-weight:400;color:var(--text-fainter);font-size:12px">(manual fallback)</span></h2>
+      <span class="badge" id="row-badge">0 entries</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:1%">#</th>
+          <th style="width:14%" data-sort="time">Time</th>
+          <th data-sort="tracking">Tracking #</th>
+          <th style="width:16%" data-sort="route">Route / Area</th>
+          <th data-sort="note">Note</th>
+          <th style="width:1%"></th>
+        </tr>
+      </thead>
+      <tbody id="entry-body"></tbody>
+    </table>
+    <div class="empty-state" id="empty-state">
+      <span class="big">&#128196;</span>
+      No assignments logged yet. Add one above to start the masterlist.
+    </div>
+  </div>
+</div>
+
+<footer>Station 849 / NPHO &mdash; entries saved locally in this browser</footer>
+
+<!-- lib/ftrack.js: the one shared FTrack deep-link builder (issue 517),
+     built from the tracking number alone. -->
+<script src="lib/ftrack.js"></script>
+<script src="lib/tool-helpers.js"></script>
+<script src="lib/csv.js"></script>
+<script src="lib/xlsx.js"></script>
+<script src="lib/spreadsheet.js"></script>
+<script src="lib/masterlist.js"></script>
+<script src="lib/masterlist-session.js"></script>
+<script src="lib/table-sort.js"></script>
+<script>
+  'use strict';
+
+  const toolStorage = ToolHelpers.createStorage();
+
+  const STORAGE_KEY = 'masterlist_session';
+  const PATTERNS_KEY = 'masterlist_patterns';
+  const CSV_KEY = 'masterlist_csv';
+  const CSV_DAY_KEY = 'masterlist_csv_day';
+
+  // ---- State ----
+  let entries = loadEntries();
+  let csvAssignments = loadCsv();          // parsed Manual Assignment Detail rows
+  let selectedDay = loadSelectedDay();     // 'ALL' or 'MM/DD/YYYY'
+  let activeTab = csvAssignments.length ? 'repeated' : 'manual';
+
+  function loadEntries() {
+    const parsed = toolStorage.get(STORAGE_KEY, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+
+  function saveEntries() {
+    toolStorage.set(STORAGE_KEY, entries);
+  }
+
+  // ---- CSV state (persists across refresh / browser restart) ----
+  function loadCsv() {
+    const parsed = toolStorage.get(CSV_KEY, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+  function saveCsv() {
+    toolStorage.set(CSV_KEY, csvAssignments);
+    toolStorage.set(CSV_DAY_KEY, selectedDay);
+  }
+  function loadSelectedDay() {
+    return toolStorage.get(CSV_DAY_KEY, 'ALL') || 'ALL';
+  }
+
+  // Deduped view of the CSV for the currently selected day ('ALL' pools the
+  // file). Composition lives in lib/masterlist-session.js; the page only holds
+  // the selected-day state.
+  function currentCsvView() {
+    return MasterlistSession.viewForDay(csvAssignments, selectedDay);
+  }
+
+  // Ingest raw export text: parse -> typed rows -> default to most recent day
+  // (lib/masterlist-session.js); the page persists and renders.
+  function loadCsvText(text) { applyReport(MasterlistSession.loadReport(text)); }
+  // #321: rows path — .xlsx/.xls/.csv all arrive here as parsed rows.
+  function loadReportRows(rows) { applyReport(MasterlistSession.loadReportRows(rows)); }
+  function applyReport(report) {
+    csvAssignments = report.assignments;
+    selectedDay = report.day;
+    activeTab = 'repeated';
+    saveCsv();
+    render();
+  }
+
+  // ---- Patterns ----
+  function getPatterns() {
+    const el = document.getElementById('patterns-input');
+    return el ? el.value : '';
+  }
+
+  function setPatterns(v) {
+    const el = document.getElementById('patterns-input');
+    if (el) el.value = v;
+  }
+
+  function savePatterns() {
+    toolStorage.set(PATTERNS_KEY, getPatterns());
+  }
+
+  function loadPatterns() {
+    return toolStorage.get(PATTERNS_KEY, '') || '';
+  }
+
+  function makeId() {
+    return 'm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  // ---- Actions ----
+  function addEntry(label, route, note) {
+    entries.push({
+      id: makeId(),
+      timestamp: Date.now(),
+      label: label,
+      route: route,
+      note: note
+    });
+    saveEntries();
+    render();
+  }
+
+  function deleteEntry(id) {
+    entries = entries.filter(function (e) { return e.id !== id; });
+    saveEntries();
+    render();
+  }
+
+  function downloadTSV() {
+    const dateStr = ToolHelpers.isoDate();
+    const tsv = buildMasterlistTSV(entries, getPatterns(), dateStr);
+    ToolHelpers.downloadTSV('masterlist-' + dateStr + '.tsv', tsv);
+  }
+
+  function downloadArtifact() {
+    const dateStr = ToolHelpers.isoDate();
+    const artifact = MasterlistSession.buildArtifact(csvAssignments, selectedDay, entries, getPatterns(), dateStr);
+    ToolHelpers.downloadTSV('masterlist-' + dateStr + '.md', artifact);
+  }
+
+  function newSort() {
+    if (!confirm('Start a new sort? This permanently clears the uploaded report, all entries, and the patterns note from this browser.')) return;
+    // Offer a download before wiping, so the explicit, double-confirmed New Sort
+    // is the only path to data loss (#67).
+    if ((csvAssignments.length || entries.length) &&
+        confirm('Download the MasterList artifact before clearing?')) {
+      downloadArtifact();
+    }
+    entries = [];
+    csvAssignments = [];
+    selectedDay = 'ALL';
+    activeTab = 'manual';
+    setPatterns('');
+    const fileInput = document.getElementById('csv-file');
+    if (fileInput) fileInput.value = '';
+    toolStorage.remove(STORAGE_KEY);
+    toolStorage.remove(PATTERNS_KEY);
+    toolStorage.remove(CSV_KEY);
+    toolStorage.remove(CSV_DAY_KEY);
+    render();
+  }
+
+  // ---- Render ----
+  function render() {
+    renderTabs();
+    renderCsv();
+    renderManualTable();
+  }
+
+  // ---- Header sort (shared lib/table-sort.js) ----
+  // Each analysis/manual table gets clickable headers. getValue reads the cell
+  // under the clicked column (mapped from the <th data-sort> order), preferring
+  // a data-sort-value attribute so Count columns compare numerically. This is
+  // display-only: it re-orders existing DOM rows and never touches the analysis
+  // data or the exported MasterList.
+  const sortNumericKeys = { count: 1, time: 1 };
+  function sortValueFromRow(table) {
+    // Build (once per table) a map of data-sort key -> column index from thead.
+    let map = table._sortColMap;
+    if (!map) {
+      map = {};
+      const ths = table.querySelectorAll('thead th');
+      Array.prototype.forEach.call(ths, function (th, i) {
+        const k = th.getAttribute('data-sort');
+        if (k != null) map[k] = i;
+      });
+      table._sortColMap = map;
+    }
+    return function (r, key) {
+      const idx = map[key];
+      if (idx == null) return '';
+      const cell = r.children[idx];
+      if (!cell) return '';
+      const dv = cell.getAttribute('data-sort-value');
+      return dv != null ? dv : cell.textContent;
+    };
+  }
+  let sortWired = false;
+  function wireHeaderSort() {
+    if (sortWired || typeof TableSort === 'undefined') return;
+    const tables = [
+      { body: 'repeated-body', attached: true },
+      { body: 'workarea-body', attached: false },
+      { body: 'user-body',     attached: false },
+      { body: 'reroute-body',  attached: false },
+      { body: 'entry-body',    attached: false },
+    ];
+    tables.forEach(function (cfg) {
+      const tbody = document.getElementById(cfg.body);
+      if (!tbody) return;
+      const table = tbody.closest('table');
+      if (!table) return;
+      TableSort.attachTableSort(table, {
+        tbody: tbody,
+        getValue: sortValueFromRow(table),
+        typeFor: function (key) { return sortNumericKeys[key] ? 'number' : 'text'; },
+        firstDirFor: function (key) { return sortNumericKeys[key] ? -1 : 1; },
+        // Repeated-Addresses rows carry an expandable detail row that must travel
+        // with its parent. Detail rows (.rpt-detail) are excluded from sorting
+        // and re-attached after their owner .rpt-row.
+        isDataRow: cfg.attached ? function (r) { return !r.classList.contains('rpt-detail'); } : undefined,
+        attachedRows: cfg.attached ? function (r) {
+          const toggle = r.querySelector('.rpt-toggle');
+          if (!toggle) return [];
+          const detail = tbody.querySelector('[data-detail="' + toggle.getAttribute('data-idx') + '"]');
+          return detail ? [detail] : [];
+        } : undefined,
+      });
+    });
+    sortWired = true;
+  }
+
+  function setActiveTab(tab) {
+    if (tab !== 'manual' && csvAssignments.length === 0) tab = 'manual';
+    activeTab = tab;
+    renderTabs();
+  }
+
+  function renderTabs() {
+    if (activeTab !== 'manual' && csvAssignments.length === 0) activeTab = 'manual';
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+      const tab = btn.getAttribute('data-tab');
+      const disabled = tab !== 'manual' && csvAssignments.length === 0;
+      btn.disabled = disabled;
+      btn.classList.toggle('active', tab === activeTab);
+    });
+    document.querySelectorAll('.tab-panel').forEach(function (panel) {
+      panel.classList.toggle('active', panel.getAttribute('data-panel') === activeTab);
+    });
+  }
+
+  // CSV-first headline: when an export is loaded, the Grand Total reflects the
+  // deduped manual-assignment count for the selected day (story 18). With no CSV
+  // it falls back to the hand-typed entry count.
+  function renderCsv() {
+    const controls = document.getElementById('csv-controls');
+    const note = document.getElementById('dedup-note');
+    const totalEl = document.getElementById('total-count');
+
+    const rptSection = document.getElementById('repeated-section');
+    const workareaSection = document.getElementById('workarea-section');
+    const userSection = document.getElementById('user-section');
+    const rerouteSection = document.getElementById('reroute-section');
+
+    if (csvAssignments.length === 0) {
+      if (controls) controls.style.display = 'none';
+      if (rptSection) rptSection.style.display = 'none';
+      if (workareaSection) workareaSection.style.display = 'none';
+      if (userSection) userSection.style.display = 'none';
+      if (rerouteSection) rerouteSection.style.display = 'none';
+      if (totalEl) totalEl.textContent = entries.length;
+      return;
+    }
+
+    if (controls) controls.style.display = 'flex';
+    renderDayPicker();
+
+    const view = currentCsvView();
+    if (totalEl) totalEl.textContent = view.kept.length;
+    if (note) {
+      if (view.removedCount > 0) {
+        note.textContent = 'Deduped ' + view.removedCount + ' duplicate scan row' +
+          (view.removedCount === 1 ? '' : 's');
+        note.className = 'has-dupes';
+      } else {
+        note.textContent = 'No duplicate scan rows';
+        note.className = '';
+      }
+    }
+
+    // Analyze the selected day's deduped rows once, but resolve reroutes against
+    // every work area in the whole uploaded file (#66 is file-wide).
+    const analysis = analyzeAssignments(view.kept, fileWorkAreaSet());
+    renderRepeatedAddresses(analysis);
+    renderWorkArea(analysis);
+    renderUser(analysis);
+    renderReroutes(analysis);
+  }
+
+  // Object map of every non-empty WORK AREA value across the whole file
+  // (lib/masterlist-session.js — reroutes resolve file-wide, #66).
+  function fileWorkAreaSet() {
+    return MasterlistSession.fileWorkAreaSet(csvAssignments);
+  }
+
+  // Compact inline work-area pills for the collapsed Repeated-Addresses row (#309).
+  // Surfaces the distinct manual work areas so scatter (2+ areas) is visible without
+  // expanding. Long lists truncate to the first 3 with a +N overflow marker.
+  function renderWorkAreaPills(areas) {
+    const list = areas || [];
+    if (list.length === 0) return '<span class="note-text">&mdash;</span>';
+    const shown = list.slice(0, 3).map(function (a) {
+      return '<span class="route-pill">' + ToolHelpers.escapeHtml(a) + '</span>';
+    }).join('');
+    const overflow = list.length > 3
+      ? '<span class="subline">+' + (list.length - 3) + '</span>'
+      : '';
+    return shown + overflow;
+  }
+
+  // Repeated-addresses panel (#64): base buildings with 2+ assignments, sorted by
+  // count desc, each expandable to package-level assignment rows.
+  function renderRepeatedAddresses(analysis) {
+    const section = document.getElementById('repeated-section');
+    const body = document.getElementById('repeated-body');
+    const empty = document.getElementById('repeated-empty');
+    const badge = document.getElementById('repeated-badge');
+    if (!section || !body) return;
+    section.style.display = 'block';
+
+    const list = analysis.repeatedAddresses;
+    if (badge) badge.textContent = list.length + (list.length === 1 ? ' building' : ' buildings');
+    body.innerHTML = '';
+
+    if (list.length === 0) {
+      if (empty) empty.style.display = 'block';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    list.forEach(function (b, i) {
+      const row = document.createElement('tr');
+      row.className = 'rpt-row';
+      row.innerHTML =
+        '<td><span class="rpt-toggle" data-idx="' + i + '">&#9656;</span></td>' +
+        '<td><span class="mono">' + ToolHelpers.escapeHtml(b.building) + '</span></td>' +
+        '<td class="note-text">' + ToolHelpers.escapeHtml(b.zips.join(', ')) + '</td>' +
+        '<td class="rpt-areas' + ((b.workAreas || []).length > 1 ? ' scatter' : '') + '">' +
+          renderWorkAreaPills(b.workAreas) + '</td>' +
+        '<td data-sort-value="' + b.count + '"><span class="count-pill">' + b.count + '</span></td>';
+      body.appendChild(row);
+
+      const detail = document.createElement('tr');
+      detail.className = 'rpt-detail';
+      detail.style.display = 'none';
+      detail.setAttribute('data-detail', i);
+      const detailRows = (b.assignments || []).map(function (a) {
+        const original = a.originalCode
+          ? '<span class="route-pill">' + ToolHelpers.escapeHtml(a.originalCode) + '</span>'
+          : '<span class="note-text">&mdash;</span>';
+        const rawOriginal = a.originalScan && a.originalScan !== a.originalCode
+          ? '<span class="subline">' + ToolHelpers.escapeHtml(a.originalScan) + '</span>'
+          : '';
+        return '<tr>' +
+          '<td><button type="button" class="copy-track mono" data-track="' +
+            ToolHelpers.escapeHtml(a.trackingId || '') + '">' +
+            ToolHelpers.escapeHtml(a.trackingId || '') + '</button>' +
+            FTrack.ftrackLink(a.trackingId) + '</td>' +
+          '<td>' + original + rawOriginal + '</td>' +
+          '<td><span class="route-pill">' + ToolHelpers.escapeHtml(a.workArea || '') + '</span></td>' +
+          '<td><span class="mono">' + ToolHelpers.escapeHtml(a.address || '') + '</span></td>' +
+          '<td><span class="row-time">' + ToolHelpers.escapeHtml(a.scanTime || '') + '</span></td>' +
+          '<td><span class="mono">' + ToolHelpers.escapeHtml(a.userName || '') + '</span></td>' +
+        '</tr>';
+      }).join('');
+      detail.innerHTML = '<td></td><td colspan="4">' +
+        '<div class="detail-scroll"><table class="detail-table">' +
+          '<thead><tr>' +
+            '<th>Tracking #</th>' +
+            '<th>Original Scan</th>' +
+            '<th>Manual Work Area</th>' +
+            '<th>Full Address</th>' +
+            '<th>Time</th>' +
+            '<th>User</th>' +
+          '</tr></thead>' +
+          '<tbody>' + detailRows + '</tbody>' +
+        '</table></div>' +
+      '</td>';
+      body.appendChild(detail);
+    });
+  }
+
+  function renderWorkArea(analysis) {
+    const section = document.getElementById('workarea-section');
+    const body = document.getElementById('workarea-body');
+    const badge = document.getElementById('workarea-badge');
+    if (!section || !body) return;
+    section.style.display = 'block';
+
+    const list = analysis.byWorkArea;
+    if (badge) badge.textContent = list.length + (list.length === 1 ? ' area' : ' areas');
+    body.innerHTML = '';
+
+    list.forEach(function (a) {
+      const row = document.createElement('tr');
+      row.innerHTML =
+        '<td><span class="route-pill">' + ToolHelpers.escapeHtml(a.workArea) + '</span></td>' +
+        '<td data-sort-value="' + a.count + '"><span class="count-pill">' + a.count + '</span></td>';
+      body.appendChild(row);
+    });
+  }
+
+  function renderUser(analysis) {
+    const section = document.getElementById('user-section');
+    const body = document.getElementById('user-body');
+    const badge = document.getElementById('user-badge');
+    if (!section || !body) return;
+    section.style.display = 'block';
+
+    const list = analysis.byUser;
+    if (badge) badge.textContent = list.length + (list.length === 1 ? ' user' : ' users');
+    body.innerHTML = '';
+
+    list.forEach(function (u) {
+      const row = document.createElement('tr');
+      row.innerHTML =
+        '<td><span class="mono">' + ToolHelpers.escapeHtml(u.user) + '</span></td>' +
+        '<td data-sort-value="' + u.count + '"><span class="count-pill">' + u.count + '</span></td>';
+      body.appendChild(row);
+    });
+  }
+
+  function renderReroutes(analysis) {
+    const section = document.getElementById('reroute-section');
+    const body = document.getElementById('reroute-body');
+    const badge = document.getElementById('reroute-badge');
+    if (!section || !body) return;
+    section.style.display = 'block';
+
+    const list = analysis.reroutes;
+    if (badge) badge.textContent = list.length + (list.length === 1 ? ' reroute' : ' reroutes');
+    body.innerHTML = '';
+
+    if (list.length === 0) {
+      body.innerHTML = '<tr><td colspan="4" class="note-text">No real-route reroutes for this day.</td></tr>';
+      return;
+    }
+
+    list.forEach(function (a) {
+      const row = document.createElement('tr');
+      row.innerHTML =
+        '<td><span class="mono">' + ToolHelpers.escapeHtml(a.trackingId || '') + '</span>' +
+          FTrack.ftrackLink(a.trackingId) + '</td>' +
+        '<td><span class="route-pill">' + ToolHelpers.escapeHtml(a.originalCode || '') + '</span></td>' +
+        '<td><span class="route-pill">' + ToolHelpers.escapeHtml(a.workArea || '') + '</span></td>' +
+        '<td><span class="mono">' + ToolHelpers.escapeHtml(a.address || '') + '</span></td>';
+      body.appendChild(row);
+    });
+  }
+
+  function renderDayPicker() {
+    const picker = document.getElementById('day-picker');
+    if (!picker) return;
+    const days = detectDays(csvAssignments);
+    if (selectedDay !== 'ALL' && days.indexOf(selectedDay) === -1) {
+      selectedDay = days.length ? days[0] : 'ALL';
+    }
+    const opts = ['<option value="ALL"' + (selectedDay === 'ALL' ? ' selected' : '') +
+      '>All days (' + days.length + ')</option>'];
+    days.forEach(function (d) {
+      opts.push('<option value="' + ToolHelpers.escapeHtml(d) + '"' +
+        (d === selectedDay ? ' selected' : '') + '>' + ToolHelpers.escapeHtml(d) + '</option>');
+    });
+    picker.innerHTML = opts.join('');
+    picker.value = selectedDay;
+  }
+
+  function renderManualTable() {
+    const body = document.getElementById('entry-body');
+    const empty = document.getElementById('empty-state');
+    body.innerHTML = '';
+
+    if (entries.length === 0) {
+      empty.style.display = 'block';
+    } else {
+      empty.style.display = 'none';
+      entries.forEach(function (e, i) {
+        const tr = document.createElement('tr');
+        const labelCell = e.label
+          ? '<span class="mono">' + ToolHelpers.escapeHtml(e.label) + '</span>'
+          : '<span class="note-text">&mdash;</span>';
+        const noteCell = e.note
+          ? '<span class="note-text">' + ToolHelpers.escapeHtml(e.note) + '</span>'
+          : '<span class="note-text">&mdash;</span>';
+        tr.innerHTML =
+          '<td>' + (i + 1) + '</td>' +
+          '<td><span class="row-time">' + ToolHelpers.escapeHtml(ToolHelpers.formatTime(e.timestamp)) + '</span></td>' +
+          '<td>' + labelCell + '</td>' +
+          '<td><span class="route-pill">' + ToolHelpers.escapeHtml(e.route) + '</span></td>' +
+          '<td>' + noteCell + '</td>' +
+          '<td><button class="del-btn" title="Delete entry" data-id="' + ToolHelpers.escapeHtml(e.id) + '">&times;</button></td>';
+        body.appendChild(tr);
+      });
+    }
+
+    // With a CSV loaded the headline total is the deduped count; the manual
+    // badge always reflects the hand-typed fallback rows only.
+    const count = entries.length;
+    if (csvAssignments.length === 0) {
+      document.getElementById('total-count').textContent = count;
+    }
+    document.getElementById('row-badge').textContent =
+      count + (count === 1 ? ' entry' : ' entries');
+  }
+
+  // ---- Wiring ----
+  document.getElementById('entry-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    const labelEl = document.getElementById('label-input');
+    const routeEl = document.getElementById('route-input');
+    const noteEl = document.getElementById('note-input');
+
+    const label = labelEl.value.trim();
+    const route = routeEl.value.trim();
+    const note = noteEl.value.trim();
+
+    // Route / work area is the only required field per spec.
+    if (!route) {
+      routeEl.classList.add('invalid');
+      routeEl.focus();
+      return;
+    }
+    routeEl.classList.remove('invalid');
+
+    addEntry(label, route, note);
+
+    labelEl.value = '';
+    routeEl.value = '';
+    noteEl.value = '';
+    labelEl.focus();
+  });
+
+  document.getElementById('route-input').addEventListener('input', function () {
+    this.classList.remove('invalid');
+  });
+
+  document.getElementById('entry-body').addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.del-btn');
+    if (btn) deleteEntry(btn.getAttribute('data-id'));
+  });
+
+  document.getElementById('download-btn').addEventListener('click', downloadTSV);
+  document.getElementById('download-md-btn').addEventListener('click', downloadArtifact);
+  document.getElementById('newsort-btn').addEventListener('click', newSort);
+  document.getElementById('patterns-input').addEventListener('input', savePatterns);
+
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setActiveTab(btn.getAttribute('data-tab'));
+      if (activeTab === 'manual') document.getElementById('label-input').focus();
+    });
+  });
+
+  document.getElementById('csv-file').addEventListener('change', function (ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    // Read raw bytes; SpreadsheetLib sniffs CSV vs .xlsx/.xls and returns rows
+    // in parseCSV shape, fed straight to the rows-based loader (#321).
+    reader.onload = function () {
+      SpreadsheetLib.readSpreadsheet(reader.result)
+        .then(function (rows) { loadReportRows(rows); })
+        .catch(function (err) { alert('Error reading file: ' + err.message); });
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  document.getElementById('day-picker').addEventListener('change', function (ev) {
+    selectedDay = ev.target.value || 'ALL';
+    saveCsv();
+    render();
+  });
+
+  // Expand/collapse a building to reveal its package-level assignment rows.
+  document.getElementById('repeated-body').addEventListener('click', function (ev) {
+    const copyBtn = ev.target.closest('.copy-track');
+    if (copyBtn) {
+      const tracking = copyBtn.getAttribute('data-track') || '';
+      if (!tracking) return;
+      const original = copyBtn.textContent;
+      ToolHelpers.copyText(tracking).then(function () {
+        copyBtn.textContent = 'Copied';
+        window.setTimeout(function () { copyBtn.textContent = original; }, 1000);
+      }).catch(function () {
+        copyBtn.textContent = 'Copy failed';
+        window.setTimeout(function () { copyBtn.textContent = original; }, 1400);
+      });
+      return;
+    }
+
+    const toggle = ev.target.closest('.rpt-toggle') ||
+      (ev.target.closest('.rpt-row') && ev.target.closest('.rpt-row').querySelector('.rpt-toggle'));
+    if (!toggle) return;
+    const idx = toggle.getAttribute('data-idx');
+    const detail = document.querySelector('[data-detail="' + idx + '"]');
+    if (!detail) return;
+    const open = detail.style.display !== 'none';
+    detail.style.display = open ? 'none' : 'table-row';
+    toggle.innerHTML = open ? '&#9656;' : '&#9662;';
+  });
+
+  // ---- Init ----
+  (function init() {
+    document.getElementById('date-label').textContent = ToolHelpers.formatDateBadge(null, { year: true });
+    setPatterns(loadPatterns());
+    render();
+    wireHeaderSort();
+    if (activeTab === 'manual') document.getElementById('label-input').focus();
+  })();
+</script>
+<script>ToolHelpers.pinHeader();</script>
+</body>
+</html>

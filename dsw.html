@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Service Worksheet (DSW) — Station 849</title>
+  <style>
+    /* Brand-ink text token (issue 393): theme.css deliberately leaves
+       FedEx purple untokenized for backgrounds/borders/pills (stays
+       meaningful in both themes), but purple TEXT on a dark surface is
+       illegible — this token is scoped to text-color uses only. */
+    :root { --brand-ink: #4D148C; }
+    html[data-theme="dark"] { --brand-ink: #c4b5fd; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    .back-link {
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: color 0.12s;
+    }
+    .back-link:hover { color: white; }
+    #date-label { font-size: 12px; opacity: 0.75; }
+
+    .intro {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .zones {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 700px) {
+      .zones { grid-template-columns: 1fr; }
+      body { padding: 12px; }
+    }
+
+    .zone {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      border-top: 4px solid var(--border);
+    }
+    .zone.ok { border-top-color: #16a34a; }
+    .zone.bad { border-top-color: #dc2626; }
+    .zone.drag { border-top-color: #4D148C; background: #faf7ff; box-shadow: 0 0 0 2px #4D148C inset; }
+    .zone h2 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .zone .hint { font-size: 12px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
+    .zone input[type="file"] { width: 100%; padding: 8px 0; cursor: pointer; font-size: 13px; }
+    .zone input[type="file"]::file-selector-button {
+      margin-right: 10px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 5px;
+      background: #4D148C;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .zone-status { font-size: 12px; margin-top: 10px; line-height: 1.5; }
+    .zone-status.ok { color: #15803d; font-weight: 600; }
+    .zone-status.error { color: #dc2626; font-weight: 600; }
+
+    .results-card {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 18px 20px;
+      display: none;
+    }
+    .results-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .results-head h2 { font-size: 15px; font-weight: 700; }
+    #funnel { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:active { opacity: 0.85; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover { background: #3a0f6a; }
+
+    /* The whole PAGE scrolls (no inner scroll box). The chip bar pins to the top
+       of the window, and the table header pins just below it — so Tracking / WA /
+       Vision Label etc. stay visible as you scroll the page. */
+    .filter-bar {
+      position: sticky;
+      top: var(--header-h, 56px);
+      z-index: 6;
+      background: var(--surface);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      padding: 10px 12px;
+      margin: 0 -20px;          /* bleed to the card edges so nothing peeks past */
+      padding-left: 20px;
+      padding-right: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .facet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .facet-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
+    .chip {
+      border: 1px solid #d6c9ec;
+      background: #f6f1fc;
+      color: var(--brand-ink);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .chip:hover { background: #ede3fb; }
+    .chip.on { background: #4D148C; color: #fff; border-color: #4D148C; }
+    .chip-n { opacity: 0.7; font-weight: 700; margin-left: 2px; }
+    .chip.clear { border-color: #e3b5b5; background: #fdf3f3; color: #b91c1c; }
+    .showing { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-faint);
+      padding: 8px 10px;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    /* Pin the header just below the (possibly wrapping) chip bar; --bar-h is set
+       from the chip bar's measured height after each render. */
+    thead th { position: sticky; top: calc(var(--header-h, 56px) + var(--bar-h, 44px)); background: var(--surface); z-index: 5; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--brand-ink); }
+    td { padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+    td.tracking { font-weight: 700; white-space: nowrap; }
+    /* issue 517: one-click FTrack lookup beside the flagged tracking number.
+       Theme tokens only, so light and dark both follow lib/theme.js. */
+    .ftrack-link { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: var(--text-faint); text-decoration: none; border: 1px solid var(--border); border-radius: 6px; padding: 0 5px; white-space: nowrap; }
+    .ftrack-link:hover { background: var(--hover-row); color: var(--text); }
+    /* Click-to-copy cells (tracking #, street address). */
+    .copyable { cursor: pointer; }
+    .copyable:hover { color: var(--brand-ink); text-decoration: underline; }
+    .copyable.copied { color: #15803d; text-decoration: none; font-weight: 600; }
+    td.area { font-weight: 600; color: var(--brand-ink); white-space: nowrap; }
+    td.vision, td.scan { white-space: nowrap; color: var(--text-muted); }
+    td.code { font-weight: 700; text-align: center; }
+    td.ontruck { white-space: nowrap; text-align: center; font-weight: 600; }
+    td.exclude-cell { text-align: center; }
+    .excl-btn { border: none; background: none; color: var(--text-fainter); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
+    .excl-btn:hover { color: #b91c1c; background: #fde2e1; }
+    .excluded-note { font-size: 12px; color: var(--text-muted); align-self: center; }
+    /* Loaded rows = already van-scanned today = highest-priority "go pull it". */
+    tr.loaded td { background: #fde2e1; }
+    tr.loaded td.ontruck { color: #b91c1c; }
+
+    .empty-note { font-size: 14px; font-weight: 600; color: #15803d; padding: 8px 0; }
+    .format-note { font-size: 11px; color: var(--text-fainter); margin-top: 12px; line-height: 1.5; }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Daily Service Worksheet (DSW)</h1>
+      <a class="back-link" href="dashboard.html">&larr; Dashboard</a>
+    </div>
+    <span id="date-label"></span>
+  </header>
+
+  <p class="intro">
+    Drop yesterday's <b>coded report</b> and today's <b>Inbound and Van Scans</b> report.
+    The worksheet keeps only <b>In-Area 12s</b> (coded 12 in the very area Vision assigned)
+    and flags the ones that inbounded to the <b>same area</b> again today — the packages at
+    risk of becoming Multi-Day Van Scans.
+  </p>
+
+  <div class="zones">
+    <section class="zone" id="coded-zone">
+      <h2>1 &middot; Yesterday's coded report</h2>
+      <p class="hint">The previous day's coded export — needs Tracking ID, WA#, Vision Label, VSA/STAR Status Code columns. Drop the file here or click to browse — .csv, .xlsx, or .xls.</p>
+      <input type="file" id="coded-file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+      <div class="zone-status" id="coded-status">No file loaded.</div>
+    </section>
+    <section class="zone" id="inbound-zone">
+      <h2>2 &middot; Today's Inbound and Van Scans</h2>
+      <p class="hint">The live report pulled during today's sort (same file the IBNO Coder uses) — needs PKG_LABEL_XREF, IB_WORK_AREA columns. Drop the file here or click to browse — .csv, .xlsx, or .xls.</p>
+      <input type="file" id="inbound-file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+      <div class="zone-status" id="inbound-status">No file loaded.</div>
+    </section>
+  </div>
+
+  <section class="results-card" id="results">
+    <div class="results-head">
+      <h2 id="results-title"></h2>
+      <button class="btn" id="copy-trk-btn" title="Copy every visible tracking # so you can paste them">Copy tracking #s</button>
+      <button class="btn btn-purple" id="copy-btn">Copy for Teams</button>
+    </div>
+    <div id="funnel"></div>
+    <div id="flagged-host"></div>
+    <p class="format-note">“Copy for Teams” copies a 5-column grid (Tracking · Today’s Vision · On truck? · Recipient · Address) that pastes as a table in Teams chat.</p>
+  </section>
+
+  <!-- lib/ftrack.js: the one shared FTrack deep-link builder (issue 517),
+       built from the tracking number alone. -->
+  <script src="lib/ftrack.js"></script>
+  <script src="lib/tool-helpers.js"></script>
+  <script src="lib/csv.js"></script>
+  <script src="lib/xlsx.js"></script>
+  <script src="lib/spreadsheet.js"></script>
+  <script src="lib/in-area-12.js"></script>
+  <script src="lib/dsw-teams-grid.js"></script>
+  <script src="lib/daily-store.js"></script>
+  <script src="lib/table-sort.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    const $ = (id) => document.getElementById(id);
+    const esc = ToolHelpers.escapeHtml;
+
+    $('date-label').textContent = new Date().toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+    });
+
+    // Per-zone state: parsed rows, or null until a valid file is loaded.
+    // Validation failure clears the zone — a bad file must never leave stale
+    // rows behind that could feed a silently-wrong list (story #15).
+    const state = { coded: null, inbound: null };
+
+    // Per-zone load sequence: replacing a file before its read completes must
+    // not let the stale FileReader's callback overwrite the newer file's
+    // state/status. Only the latest load for a zone may land.
+    const loadSeq = { coded: 0, inbound: 0 };
+
+    // Wrong-zone diagnosis: labeled zones give us the user's intent, so when
+    // the expected headers are missing we can check whether the file matches
+    // the OTHER zone's signature and say "wrong file" instead of guessing.
+    function diagnose(zone, headerRow) {
+      const missing = zone === 'coded'
+        ? InArea12.missingCodedHeaders(headerRow)
+        : InArea12.missingInboundHeaders(headerRow);
+      if (missing.length === 0) return null;
+      const other = zone === 'coded'
+        ? InArea12.missingInboundHeaders(headerRow)
+        : InArea12.missingCodedHeaders(headerRow);
+      if (other.length === 0) {
+        return 'This looks like the ' +
+          (zone === 'coded' ? 'Inbound and Van Scans report' : 'coded report') +
+          ' — it belongs in the other slot.';
+      }
+      return 'Missing expected columns: ' + missing.join(', ') +
+        '. Either this is the wrong file, or the export’s header names changed' +
+        ' — if the report is right, the headers need confirming (issue #187).';
+    }
+
+    function setStatus(zone, ok, message) {
+      const card = $(zone + '-zone');
+      const status = $(zone + '-status');
+      card.classList.toggle('ok', ok === true);
+      card.classList.toggle('bad', ok === false);
+      status.className = 'zone-status ' + (ok === true ? 'ok' : ok === false ? 'error' : '');
+      status.textContent = message;
+    }
+
+    // Shared landing point for parsed rows from any source. Validation,
+    // wrong-slot diagnosis, and state/status updates live here so both readers
+    // behave identically. `seq` guards against a newer drop superseding an
+    // older read that is still in flight.
+    function processRows(zone, file, rows, seq) {
+      if (seq !== loadSeq[zone]) return; // superseded by a newer drop
+      // Strip any SSRS-style title/preamble block so rows[0] is the real header
+      // (the "Inbound and Van Scans" export prepends Textbox12/Facility/Sort
+      // Date lines). A clean export is unchanged; a wrong file still fails below.
+      rows = zone === 'coded'
+        ? InArea12.stripCodedPreamble(rows)
+        : InArea12.stripInboundPreamble(rows);
+      if (!rows.length || rows.length < 2) {
+        setStatus(zone, false, file.name + ': no data rows found — empty or not a report export.');
+        render();
+        return;
+      }
+      const problem = diagnose(zone, rows[0]);
+      if (problem) {
+        setStatus(zone, false, file.name + ': ' + problem);
+        render();
+        return;
+      }
+      state[zone] = rows;
+      setStatus(zone, true, '✓ ' + file.name + ' — ' + (rows.length - 1) + ' rows.');
+      render();
+    }
+
+    // One reader for every format: read the raw bytes and let SpreadsheetLib
+    // sniff the content (csv / xlsx / html-table / legacy-xls) so a mislabeled
+    // file still loads instead of being rejected by its extension.
+    function handleFile(zone, file) {
+      const seq = ++loadSeq[zone];
+      state[zone] = null;
+      render();
+      if (!file) { setStatus(zone, null, 'No file loaded.'); return; }
+      const reader = new FileReader();
+      reader.onerror = function () {
+        if (seq !== loadSeq[zone]) return; // superseded by a newer drop
+        setStatus(zone, false, 'Could not read ' + file.name + '.');
+        render();
+      };
+      reader.onload = function () {
+        if (seq !== loadSeq[zone]) return; // superseded by a newer drop
+        SpreadsheetLib.readSpreadsheet(reader.result).then(function (rows) {
+          processRows(zone, file, rows, seq);
+        }).catch(function (err) {
+          if (seq !== loadSeq[zone]) return;
+          setStatus(zone, false, file.name + ': ' + (err && err.message ? err.message : 'could not read this file') + '.');
+          render();
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    $('coded-file').addEventListener('change', function () { handleFile('coded', this.files && this.files[0]); });
+    $('inbound-file').addEventListener('change', function () { handleFile('inbound', this.files && this.files[0]); });
+
+    // Drag-and-drop: the whole zone card is a target. Highlight on drag-over,
+    // and route the first dropped file through the same handleFile path.
+    function wireDropZone(zone) {
+      const card = $(zone + '-zone');
+      function stop(e) { e.preventDefault(); e.stopPropagation(); }
+      card.addEventListener('dragenter', function (e) { stop(e); card.classList.add('drag'); });
+      card.addEventListener('dragover', function (e) { stop(e); card.classList.add('drag'); });
+      card.addEventListener('dragleave', function (e) {
+        // Only clear when the cursor actually leaves the card, not its children.
+        if (e.target === card || !card.contains(e.relatedTarget)) card.classList.remove('drag');
+      });
+      card.addEventListener('drop', function (e) {
+        stop(e);
+        card.classList.remove('drag');
+        const dt = e.dataTransfer;
+        const f = dt && dt.files && dt.files[0];
+        if (f) handleFile(zone, f);
+      });
+    }
+    wireDropZone('coded');
+    wireDropZone('inbound');
+
+    let flagged = [];                                       // full flagged list
+    const activeFilter = { area: new Set(), provider: new Set() };
+    // Trackings the user dismissed as known-good (false positives). Hidden from
+    // the grid AND the Teams copy; persisted today-only (date-guarded) so they
+    // survive refresh but clear next day. excludeOrder backs "Undo last".
+    const EXCL_KEY = 'dsw_excluded';
+    let excluded = new Set();
+    let excludeOrder = [];
+
+    // Rows passing the current chip selection: within a facet the chips are OR'd,
+    // across facets they're AND'd (empty facet = no constraint).
+    function visibleRows() {
+      const rows = flagged.filter(function (f) {
+        return !excluded.has(f.tracking) &&
+               (activeFilter.area.size === 0 || activeFilter.area.has(f.workAreaName)) &&
+               (activeFilter.provider.size === 0 || activeFilter.provider.has(f.serviceProvider));
+      });
+      return sortRows(rows);
+    }
+
+    // Grid columns: [label, sort-key]. Drives both the header cells and which
+    // field each header sorts by. The trailing exclude column is not sortable.
+    const COLS = [
+      ['Tracking', 'tracking'], ['On truck?', 'onTruck'], ['WA#', 'area'], ['Work Area', 'workAreaName'],
+      ['Vision Label', 'visionLabel'], ['Today’s Vision', 'todaysVisionLabel'], ['VSA', 'vsa'], ['STAR', 'star'],
+      ['PSA/CSA', 'psaCsa'], ['Service Provider', 'serviceProvider'], ['Vehicle #', 'vehicle'],
+      ['Inbound Scan', 'inboundScanTime'], ['Recipient', 'recipient'], ['Address', 'street'],
+      ['City', 'city'], ['State', 'state'], ['Zip', 'zip'],
+    ];
+    // null key = default order (loaded-first, set in render()); otherwise sort by
+    // the chosen header. dir 1 = ascending, -1 = descending. Numeric-aware so
+    // '0143' < '0359' and VSA '0' < '12' compare correctly; onTruck sorts by flag.
+    let sortState = { key: null, dir: 1 };
+    function sortRows(rows) {
+      if (!sortState.key) {
+        // Default view order: loaded (already van-scanned) first — the urgent
+        // "go pull it" rows — then stable by original position.
+        return rows.map(function (f, i) { return { f: f, i: i }; })
+          .sort(function (a, b) { return ((b.f.onTruck ? 1 : 0) - (a.f.onTruck ? 1 : 0)) || a.i - b.i; })
+          .map(function (x) { return x.f; });
+      }
+      const k = sortState.key, dir = sortState.dir;
+      // Comparison goes through the shared lib/table-sort.js core (issue #308) so
+      // dsw no longer forks its own numeric-aware localeCompare. onTruck sorts by
+      // its boolean flag; everything else compares the field value as text.
+      return rows.slice().sort(function (a, b) {
+        if (k === 'onTruck') return ((a.onTruck ? 1 : 0) - (b.onTruck ? 1 : 0)) * dir;
+        return TableSort.compareValues(a[k], b[k], dir, 'text');
+      });
+    }
+    function cycleSort(key) {
+      // Tri-state header cycle (asc → desc → default order) via the shared lib.
+      sortState = TableSort.nextSortState(sortState, key); // { key, dir: 1|-1 } or { key:null }
+      renderResults();
+    }
+
+    function persistExclusions() {
+      DailyStore.save(localStore(), today(), excludeOrder.slice(), EXCL_KEY);
+    }
+    function excludeRow(tracking) {
+      if (!tracking || excluded.has(tracking)) return;
+      excluded.add(tracking);
+      excludeOrder.push(tracking);
+      persistExclusions();
+      renderResults();
+    }
+    function undoLastExclusion() {
+      const last = excludeOrder.pop();
+      if (last == null) return;
+      excluded.delete(last);
+      persistExclusions();
+      renderResults();
+    }
+    function restoreAllExclusions() {
+      excluded = new Set();
+      excludeOrder = [];
+      persistExclusions();
+      renderResults();
+    }
+
+    // {value,count} for a field over the full flagged list, numeric-aware sort.
+    function facet(field) {
+      const m = new Map();
+      flagged.forEach(function (f) { if (f[field]) m.set(f[field], (m.get(f[field]) || 0) + 1); });
+      return Array.from(m.keys())
+        .sort(function (a, b) { return String(a).localeCompare(String(b), undefined, { numeric: true }); })
+        .map(function (v) { return { value: v, count: m.get(v) }; });
+    }
+
+    function chips(field, facetKey) {
+      const set = activeFilter[facetKey];
+      return facet(field).map(function (x) {
+        return '<button type="button" class="chip' + (set.has(x.value) ? ' on' : '') +
+          '" data-facet="' + facetKey + '" data-value="' + esc(x.value) + '">' +
+          esc(x.value) + '<span class="chip-n">' + x.count + '</span></button>';
+      }).join('');
+    }
+
+    function render() {
+      const card = $('results');
+      if (!state.coded || !state.inbound) {
+        card.style.display = 'none';
+        flagged = [];
+        activeFilter.area.clear();
+        activeFilter.provider.clear();
+        return;
+      }
+      const candidates = InArea12.findCandidates(state.coded);
+      flagged = InArea12.flagRecurring(candidates, state.inbound);
+      // Default loaded-first ordering is applied in the view (sortRows), so the
+      // raw flagged list keeps its natural order here.
+      activeFilter.area.clear();
+      activeFilter.provider.clear();
+
+      $('results-title').textContent = flagged.length
+        ? flagged.length + ' recurring In-Area 12' + (flagged.length === 1 ? '' : 's')
+        : 'No recurring In-Area 12s';
+      $('funnel').textContent = (state.coded.length - 1) + ' coded rows → ' +
+        candidates.length + ' In-Area 12 candidate' + (candidates.length === 1 ? '' : 's') +
+        ' → ' + flagged.length + ' back in the same area today';
+
+      // Persist the computed flags stamped with today's date so a refresh or
+      // same-day reopen restores them (slice #276). Saving the COMPUTED rows
+      // only — not the raw reports — and never across days (DailyStore guards).
+      DailyStore.save(localStore(), today(), flagged);
+
+      // Show the card BEFORE rendering so the chip bar has a real height when
+      // measureBar() runs — measuring while display:none yields 0 and the sticky
+      // header would then pin at top:0, hidden behind the chip bar.
+      card.style.display = 'block';
+      renderResults();
+    }
+
+    function today() { return new Date().toLocaleDateString('en-US'); }
+    function localStore() { try { return window.localStorage; } catch (e) { return null; } }
+
+    // On page load, restore today's flagged grid if it was computed earlier today
+    // and no live files have been dropped yet. Stale (previous-day) data is
+    // ignored and cleared by DailyStore — we never show yesterday's flags.
+    // Today's exclusions (date-guarded): load before any render so they apply to
+    // both a restored grid and a freshly computed one. Stale (previous-day)
+    // exclusions are ignored/cleared by DailyStore.
+    function loadExclusions() {
+      const arr = DailyStore.load(localStore(), today(), EXCL_KEY);
+      if (Array.isArray(arr)) { excludeOrder = arr.slice(); excluded = new Set(arr); }
+    }
+
+    function restoreFromStore() {
+      if (state.coded || state.inbound) return;
+      const saved = DailyStore.load(localStore(), today());
+      if (!Array.isArray(saved) || !saved.length) return;
+      flagged = saved;
+      activeFilter.area.clear();
+      activeFilter.provider.clear();
+      $('results-title').textContent = flagged.length + ' recurring In-Area 12' + (flagged.length === 1 ? '' : 's');
+      $('funnel').textContent = 'Restored from earlier today — drop today’s reports again to refresh.';
+      $('results').style.display = 'block';
+      renderResults();
+    }
+
+    // Re-renders only the chip bar + table for the current filter (the funnel and
+    // title stay on the full counts). Called on load and on every chip toggle.
+    function renderResults() {
+      const host = $('flagged-host');
+      if (!flagged.length) {
+        host.innerHTML = '<div class="empty-note">Nothing recurred — no MDVS risks from yesterday’s In-Area 12s.</div>';
+        return;
+      }
+      const rows = visibleRows();
+      const filtering = activeFilter.area.size || activeFilter.provider.size;
+      const bar =
+        '<div class="filter-bar">' +
+          '<div class="facet"><span class="facet-label">Work Area</span>' + chips('workAreaName', 'area') + '</div>' +
+          '<div class="facet"><span class="facet-label">Provider</span>' + chips('serviceProvider', 'provider') + '</div>' +
+          (filtering ? '<button type="button" class="chip clear" data-clear="1">Clear ✕</button>' : '') +
+          (filtering ? '<span class="showing">showing ' + rows.length + ' of ' + flagged.length + '</span>' : '') +
+          (excludeOrder.length
+            ? '<span class="excluded-note">' + excludeOrder.length + ' excluded today</span>' +
+              '<button type="button" class="chip" data-undo-excl="1">Undo last</button>' +
+              '<button type="button" class="chip" data-restore-excl="1">Restore all</button>'
+            : '') +
+        '</div>';
+      const headCells = COLS.map(function (c) {
+        const arrow = sortState.key === c[1] ? (sortState.dir === 1 ? ' ▲' : ' ▼') : '';
+        return '<th class="sortable" data-sort-key="' + c[1] + '">' + esc(c[0]) + arrow + '</th>';
+      }).join('');
+      const table =
+        '<table><thead><tr>' + headCells + '<th></th>' +
+        '</tr></thead><tbody>' +
+        rows.map(function (f) {
+          return '<tr' + (f.onTruck ? ' class="loaded"' : '') + '>' +
+            '<td class="tracking"><span class="copyable" title="Click to copy" data-copy="' + esc(f.tracking) + '">' + esc(f.tracking) + '</span>' + FTrack.ftrackLink(f.tracking) + '</td>' +
+            '<td class="ontruck">' + (f.onTruck ? '⚠️ Loaded' : 'Not yet') + '</td>' +
+            '<td class="area">' + esc(f.area) + '</td>' +
+            '<td>' + esc(f.workAreaName) + '</td>' +
+            '<td class="vision">' + esc(f.visionLabel) + '</td>' +
+            '<td class="vision">' + esc(f.todaysVisionLabel) + '</td>' +
+            '<td class="code">' + esc(f.vsa) + '</td>' +
+            '<td class="code">' + esc(f.star) + '</td>' +
+            '<td>' + esc(f.psaCsa) + '</td>' +
+            '<td>' + esc(f.serviceProvider) + '</td>' +
+            '<td>' + esc(f.vehicle) + '</td>' +
+            '<td class="scan">' + esc(f.inboundScanTime) + '</td>' +
+            '<td>' + esc(f.recipient) + '</td>' +
+            '<td class="copyable" title="Click to copy" data-copy="' + esc(f.street) + '">' + esc(f.street) + '</td>' +
+            '<td>' + esc(f.city) + '</td>' +
+            '<td>' + esc(f.state) + '</td>' +
+            '<td>' + esc(f.zip) + '</td>' +
+            '<td class="exclude-cell"><button type="button" class="excl-btn" title="Exclude — known good" data-exclude="' + esc(f.tracking) + '">✕</button></td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table>';
+      host.innerHTML = bar + table;
+      measureBar();
+    }
+
+    // The page (not an inner box) scrolls, so the sticky table header pins at the
+    // chip bar's height. Re-measure after each render and on resize, since the
+    // chip bar can wrap to more rows at narrower widths.
+    function measureBar() {
+      const barEl = $('flagged-host').querySelector('.filter-bar');
+      document.documentElement.style.setProperty('--bar-h', (barEl ? barEl.offsetHeight : 44) + 'px');
+    }
+    window.addEventListener('resize', function () { if (flagged.length) measureBar(); });
+
+    // Chip toggles + click-to-copy (tracking #, address), via one delegated handler.
+    $('flagged-host').addEventListener('click', function (e) {
+      const sortTh = e.target.closest('th[data-sort-key]');
+      if (sortTh) { cycleSort(sortTh.getAttribute('data-sort-key')); return; }
+      const exclBtn = e.target.closest('[data-exclude]');
+      if (exclBtn) { excludeRow(exclBtn.getAttribute('data-exclude')); return; }
+      if (e.target.closest('[data-undo-excl]')) { undoLastExclusion(); return; }
+      if (e.target.closest('[data-restore-excl]')) { restoreAllExclusions(); return; }
+      const chip = e.target.closest('.chip');
+      if (chip) {
+        if (chip.getAttribute('data-clear')) {
+          activeFilter.area.clear();
+          activeFilter.provider.clear();
+        } else {
+          const set = activeFilter[chip.getAttribute('data-facet')];
+          const val = chip.getAttribute('data-value');
+          if (set.has(val)) set.delete(val); else set.add(val);
+        }
+        renderResults();
+        return;
+      }
+      const cell = e.target.closest('.copyable');
+      if (cell) {
+        const val = cell.getAttribute('data-copy');
+        if (val) ToolHelpers.copyText(val).then(function () { flashCell(cell, val); }).catch(function () { /* copy failed — no flash */ });
+      }
+    });
+
+    function flashCell(cell, original) {
+      cell.classList.add('copied');
+      cell.textContent = 'Copied ✓';
+      setTimeout(function () { cell.textContent = original; cell.classList.remove('copied'); }, 900);
+    }
+
+    // The team-facing grid for the CURRENTLY VISIBLE (filtered) rows. The slim
+    // 5-column action grid lives in lib/dsw-teams-grid.js; this just feeds it
+    // today's date and the visible rows.
+    function teamsGrid() {
+      return DswTeamsGrid.buildTeamsGrid(visibleRows(), new Date().toLocaleDateString('en-US'));
+    }
+
+    // Copy as a real HTML table so it pastes as a grid in Teams (Teams shows
+    // Markdown pipes raw). ClipboardItem carries text/html + a text/plain
+    // fallback; if the async Clipboard API or ClipboardItem is unavailable we
+    // fall back to copying just the plain-text grid.
+    function copyTeams() {
+      const grid = teamsGrid();
+      if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+        try {
+          const item = new ClipboardItem({
+            'text/html': new Blob([grid.html], { type: 'text/html' }),
+            'text/plain': new Blob([grid.text], { type: 'text/plain' }),
+          });
+          return navigator.clipboard.write([item]).catch(function () { return ToolHelpers.copyText(grid.text); });
+        } catch (e) { return ToolHelpers.copyText(grid.text); }
+      }
+      return ToolHelpers.copyText(grid.text);
+    }
+
+    $('copy-btn').addEventListener('click', function () {
+      const btn = this;
+      Promise.resolve(copyTeams()).then(function () {
+        btn.textContent = 'Copied ✓';
+        setTimeout(function () { btn.textContent = 'Copy for Teams'; }, 1600);
+      }).catch(function () { btn.textContent = 'Copy failed'; setTimeout(function () { btn.textContent = 'Copy for Teams'; }, 1600); });
+    });
+
+    // Copy every visible tracking # (current sort/filter, exclusions removed),
+    // one per line, so each lands in its own row when pasted (spreadsheet column,
+    // batch-scan field, etc.) without re-entering line breaks.
+    $('copy-trk-btn').addEventListener('click', function () {
+      const btn = this;
+      const list = visibleRows().map(function (f) { return f.tracking; }).filter(Boolean).join('\n');
+      Promise.resolve(ToolHelpers.copyText(list)).then(function () {
+        btn.textContent = 'Copied ✓';
+        setTimeout(function () { btn.textContent = 'Copy tracking #s'; }, 1600);
+      }).catch(function () { btn.textContent = 'Copy failed'; setTimeout(function () { btn.textContent = 'Copy tracking #s'; }, 1600); });
+    });
+
+    loadExclusions();
+    restoreFromStore();
+  })();
+  </script>
+  <script>ToolHelpers.pinHeader();</script>
+</body>
+</html>

@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedule Viewer — Station 849</title>
+  <style>
+    /* Brand-ink text token (issue 393): theme.css deliberately leaves
+       FedEx purple untokenized for backgrounds/borders/pills (stays
+       meaningful in both themes), but purple TEXT on a dark surface is
+       illegible — this token is scoped to text-color uses only. */
+    :root { --brand-ink: #4D148C; }
+    html[data-theme="dark"] { --brand-ink: #c4b5fd; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    .back-link {
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: color 0.12s;
+    }
+    .back-link:hover { color: white; }
+    #today-label { font-size: 12px; opacity: 0.85; font-weight: 600; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:active { opacity: 0.85; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover { background: #3a0f6a; }
+    .btn-gray { background: #e4e4e7; color: #333; }
+    .btn-gray:hover { background: #d1d1d6; }
+    .btn-success { background: #16a34a; color: white; }
+
+    /* ── Loader panel ───────────────────────────────────────────────────────── */
+    #loader {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    #loader .panel-body { padding: 18px 20px; }
+    #loader label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--brand-ink);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    #loader .hint-text { font-size: 11px; color: var(--text-faint); margin-bottom: 10px; line-height: 1.5; }
+    #schedule-input {
+      width: 100%;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 130px;
+      color: var(--text);
+      background: var(--field-bg-alt);
+      transition: border-color 0.15s;
+      white-space: pre;
+      overflow-wrap: normal;
+      overflow-x: auto;
+    }
+    #schedule-input:focus { outline: none; border-color: #4D148C; background: var(--field-bg); }
+    .loader-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    #parse-status {
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    #parse-status.ok  { color: #16a34a; }
+    #parse-status.err { color: #dc2626; }
+    #file-input { display: none; }
+
+    #loader-toggle { margin-bottom: 16px; }
+
+    /* ── No-schedule empty state ────────────────────────────────────────────── */
+    #empty-state {
+      background: var(--surface);
+      border: 2px dashed var(--border-strong);
+      border-radius: 10px;
+      padding: 48px 24px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #empty-state .icon { font-size: 34px; display: block; margin-bottom: 10px; }
+    #empty-state h2 { color: var(--brand-ink); font-size: 17px; margin-bottom: 6px; }
+    #empty-state p { color: var(--text-faint); font-size: 13px; }
+
+    /* ── Sub-table sections ─────────────────────────────────────────────────── */
+    .section {
+      background: var(--surface);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .section-header h2 { font-size: 15px; font-weight: 700; }
+    .section-header .meta { font-size: 11px; color: var(--text-faint); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      background: var(--surface-3);
+      padding: 9px 14px;
+      text-align: center;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    th.name-col, td.name-col {
+      text-align: left;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--text); background: var(--hover-soft); }
+    th.sortable.sort-active { color: var(--text); }
+    th.sortable.sort-active::after { content: ' \25B2'; font-size: 9px; color: var(--text-muted); }
+    th.sortable.sort-active.sort-desc::after { content: ' \25BC'; }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      text-align: center;
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    /* Zebra + row-hover scoped away from .cov-cell: the coverage heatmap cells
+       carry their own status background (covered/fragile/uncovered), and these
+       rules' specificity would otherwise wash even rows / hovered rows back to a
+       flat surface color and hide the status. Grid cells (non-.cov-cell) keep
+       the zebra + hover treatment. */
+    tbody tr:nth-child(even) td:not(.cov-cell) { background: var(--surface-2); }
+    tr:hover td:not(.cov-cell) { background: var(--hover-row); }
+
+    /* Today's column highlight.
+       Scoped away from .cov-cell: the coverage heatmap cells carry .today too,
+       and a solid fill here would paint over their status colors (covered/
+       fragile/uncovered). Those cells get an outline instead (see .cov-cell.today). */
+    th.today, td.today:not(.cov-cell) {
+      background: #ede9ff !important;
+      box-shadow: inset 0 0 0 1px #d6c9f5;
+    }
+    th.today { color: var(--brand-ink); }
+    tr:hover td.today:not(.cov-cell) { background: #ddd2fb !important; }
+
+    /* Area code pills */
+    .area-pill {
+      display: inline-block;
+      min-width: 30px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      color: white;
+      cursor: help;
+    }
+    .area-A     { background: #4D148C; }
+    .area-B     { background: #1d4ed8; }
+    .area-C     { background: #0e7490; }
+    .area-ME    { background: #b45309; }
+    .area-DMG   { background: #dc2626; }
+    .area-CDMG  { background: #9333ea; }
+    .area-other { background: #6b7280; }
+    .off-cell   { color: var(--text-fainter); font-weight: 600; }
+
+    .count-total td { font-weight: 700; }
+    .count-label { text-align: left; font-weight: 600; color: var(--text); }
+
+    /* ── Legend ─────────────────────────────────────────────────────────────── */
+    #legend { margin-top: 4px; margin-bottom: 24px; }
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
+      padding: 16px 18px;
+    }
+    .legend-item { display: flex; gap: 10px; align-items: flex-start; }
+    .legend-item .legend-pill {
+      flex-shrink: 0;
+      display: inline-block;
+      min-width: 42px;
+      text-align: center;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      color: white;
+    }
+    .legend-item .legend-text { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+    .legend-item .legend-text strong { color: var(--text); }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-fainter);
+      margin-top: 8px;
+    }
+    /* Coverage panel (PRD #231) */
+    #coverage-body { padding: 4px 0; }
+    .cov-line {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      font-size: 13px;
+    }
+    .cov-line:last-child { border-bottom: none; }
+    .cov-line { border-left: 4px solid transparent; }
+    .cov-line.cov-cannotskip { border-left-color: #dc2626; }
+    .cov-line.cov-uncovered  { border-left-color: #d97706; }
+    .cov-line.cov-fragile    { border-left-color: #ca8a04; }
+    .cov-line.cov-damagesnosolo { border-left-color: #dc2626; }
+    .cov-line.cov-headcount  { border-left-color: #64748b; }
+    .cov-line.cov-clear      { border-left-color: #16a34a; }
+    .cov-day { font-weight: 700; min-width: 42px; color: var(--text); }
+    .cov-msg { flex: 1; font-weight: 600; }
+    .cov-cannotskip .cov-msg { color: #b91c1c; }
+    .cov-uncovered  .cov-msg { color: #b45309; }
+    .cov-fragile    .cov-msg { color: #a16207; }
+    .cov-damagesnosolo .cov-msg { color: #b91c1c; }
+    .cov-headcount  .cov-msg { color: #475569; }
+    .cov-clear      .cov-msg { color: #15803d; }
+    .cov-rule {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-faint);
+      background: var(--border-soft);
+      border-radius: 999px;
+      padding: 2px 9px;
+      white-space: nowrap;
+    }
+    .cov-line.cov-today { background: var(--surface-2); }
+    #coverage-section { border-top: 4px solid #4D148C; }
+
+    /* Your scheduling rules panel (#243) */
+    #principles-section { border-top: 4px solid #4D148C; }
+    #principles-body { padding: 4px 0; }
+    .rule-line { display: flex; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border-soft); }
+    .rule-line:last-child { border-bottom: none; }
+    .rule-num {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      border-radius: 999px;
+      background: #f0eafb; color: #4D148C;
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rule-text { display: flex; flex-direction: column; gap: 2px; }
+    .rule-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .rule-why { font-size: 12px; color: #777; line-height: 1.45; }
+
+    /* Coverage strip / heatmap (#234) */
+    #coverage-map { padding: 12px 18px 4px; }
+    table.cov-map { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
+    table.cov-map th { padding: 2px 8px; color: var(--text-faint); font-size: 11px; font-weight: 700; text-align: center; }
+    table.cov-map th.today { color: var(--brand-ink); }
+    table.cov-map th.cov-map-area { text-align: left; color: var(--text); min-width: 38px; }
+    .cov-cell { width: 40px; height: 18px; border-radius: 4px; }
+    .cov-cell.today { outline: 2px solid #4D148C; outline-offset: -2px; }
+    .cov-cell-covered    { background: #86efac; }
+    .cov-cell-fragile    { background: #fde047; }
+    .cov-cell-uncovered  { background: #fdba74; }
+    .cov-cell-cannotskip { background: #f87171; }
+    .cov-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--text-faint); }
+    .cov-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .cov-legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="dashboard.html" class="back-link">&larr; Dashboard</a>
+    <h1>Schedule Viewer &mdash; Station 849</h1>
+  </div>
+  <span id="today-label"></span>
+</header>
+
+<button class="btn btn-gray" id="loader-toggle" onclick="toggleLoader()">&#128203; Load / Update Schedule</button>
+
+<div id="loader" style="display:none">
+  <div class="panel-body">
+    <label for="schedule-input">Paste Schedule Data</label>
+    <div class="hint-text">
+      Paste tab-separated or markdown-table schedule text. Include the section headings
+      (<strong>Area Assignments</strong>, <strong>Shift Times</strong>, <strong>Staffing Counts</strong>)
+      so each block lands in the right table. Or upload a <code>.md</code>/<code>.txt</code>/<code>.tsv</code> file.
+      Working from a screenshot or Excel file? Hand it to Claude — it returns this canonical markdown
+      (off&nbsp;=&nbsp;&mdash;, single <strong>QA</strong> count row), which you paste here. See
+      <code>docs/adr/0003-schedule-ingest-via-claude.md</code>.
+    </div>
+    <textarea id="schedule-input" spellcheck="false" placeholder="Area Assignments&#10;Employee&#9;Sun&#9;Mon&#9;Tue&#9;Wed&#9;Thu&#9;Fri&#9;Sat&#10;Worker 1&#9;ME&#9;ME&#9;—&#9;—&#9;ME&#9;ME&#9;B&#10;..."></textarea>
+    <div class="loader-actions">
+      <button class="btn btn-purple" onclick="loadFromTextarea()">Load Schedule</button>
+      <button class="btn btn-gray" onclick="document.getElementById('file-input').click()">&#8593; Upload File</button>
+      <button class="btn btn-gray" onclick="clearSchedule()">Clear</button>
+      <span id="parse-status"></span>
+    </div>
+    <input type="file" id="file-input" accept=".md,.txt,.tsv,.csv,.text" onchange="handleFile(this.files[0])">
+  </div>
+</div>
+
+<div id="empty-state">
+  <span class="icon">&#128197;</span>
+  <h2>No schedule loaded</h2>
+  <p>Open <strong>Load / Update Schedule</strong> above and paste this week&rsquo;s schedule to get started.</p>
+</div>
+
+<!-- COVERAGE (analyzeWeek findings, cited to principles.md) -->
+<div class="section" id="coverage-section" style="display:none">
+  <div class="section-header">
+    <h2>&#9888; Coverage</h2>
+    <span class="meta" id="coverage-meta"></span>
+  </div>
+  <div id="coverage-map"></div>
+  <div id="coverage-body"></div>
+</div>
+
+<!-- YOUR SCHEDULING RULES (read-only mirror of principles.md, PRD #241) -->
+<div class="section" id="principles-section">
+  <div class="section-header">
+    <h2>Your scheduling rules</h2>
+    <span class="meta">what the critique judges against</span>
+  </div>
+  <div id="principles-body"></div>
+</div>
+
+<!-- AREA ASSIGNMENTS -->
+<div class="section" id="area-section" style="display:none">
+  <div class="section-header">
+    <h2>Area Assignments</h2>
+    <span class="meta" id="area-meta"></span>
+  </div>
+  <div class="table-wrap"><table id="area-table"></table></div>
+</div>
+
+<!-- SHIFT TIMES -->
+<div class="section" id="shift-section" style="display:none">
+  <div class="section-header">
+    <h2>Shift Times</h2>
+    <span class="meta">Scheduled hours per day</span>
+  </div>
+  <div class="table-wrap"><table id="shift-table"></table></div>
+</div>
+
+<!-- STAFFING COUNTS -->
+<div class="section" id="counts-section" style="display:none">
+  <div class="section-header">
+    <h2>Staffing Counts</h2>
+    <span class="meta">QA / Temps / Total per day</span>
+  </div>
+  <div class="table-wrap"><table id="counts-table"></table></div>
+</div>
+
+<!-- LEGEND -->
+<div class="section" id="legend" style="display:none">
+  <div class="section-header">
+    <h2>Area Code Legend</h2>
+  </div>
+  <div class="legend-grid" id="legend-grid"></div>
+</div>
+
+<footer>Station 849 / NPHO &mdash; Internal Use Only</footer>
+
+<script src="lib/tool-helpers.js"></script>
+<script src="lib/schedule-analysis.js"></script>
+<script src="lib/schedule-coverage.js"></script>
+<script src="lib/schedule-principles.js"></script>
+<script src="lib/schedule-data.js"></script>
+<script src="lib/table-sort.js"></script>
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const sched = ToolHelpers.createScheduleStore();
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Area code legend (descriptions from CONTEXT.md). Keys are normalized (uppercase,
+// slash preserved) so "C/DMG" and "ME" both resolve.
+const AREA_LEGEND = {
+  'A':     { cls: 'area-A',    name: 'Cage A',      desc: 'High VAL cage audits, 100/200 rollers, controlled labels, red shelf, closures, smalls' },
+  'B':     { cls: 'area-B',    name: 'Cage B',      desc: 'Closure pallets, 999s/FRO, 12/02 pallets, 300/400 rollers, closure scans, packages to belts' },
+  'C':     { cls: 'area-C',    name: 'Cage C',      desc: 'Leftover damages, 999s/FRO support, 500/600 rollers, closures, misloads, 7000s' },
+  'ME':    { cls: 'area-ME',   name: 'Middle Earth', desc: 'Address updates, intercepts, relabels, repacks, overgoods, chute flow, 300/400 rollers, 3399 audits' },
+  'DMG':   { cls: 'area-DMG',  name: 'Damages',     desc: 'Primary damage processing' },
+  'C/DMG': { cls: 'area-CDMG', name: 'Combo C + Damages', desc: 'Area C duties combined with damage processing' },
+  '—':     { cls: '',          name: 'Off',         desc: 'Not scheduled' },
+};
+
+// ─── PARSER ─────────────────────────────────────────────────────────────────────
+// parseScheduleInput lives in the shared helpers lib (issue #78) so the Schedule
+// Viewer and the dashboard hub parse identically — single-source principle. The
+// interface is unchanged: raw text in, { days, areas, shifts, counts } out. It is
+// a pure function (no DOM, no side effects) and unit-tested via tests/schedule.test.js.
+const parseScheduleInput = ToolHelpers.parseScheduleInput;
+const normalizeCode = ToolHelpers.normalizeCode;
+const isOff = ToolHelpers.isOff;
+const areaClass = ToolHelpers.areaClass;
+const todayIndex = ToolHelpers.todayIndex;
+
+// ─── RENDER ─────────────────────────────────────────────────────────────────────
+const esc = ToolHelpers.escapeHtml;
+
+function renderSchedule(data) {
+  const hasAny = data.areas.length || data.shifts.length || data.counts.length;
+  const tIdx = todayIndex();
+
+  document.getElementById('empty-state').style.display = hasAny ? 'none' : 'block';
+
+  renderCoverage(data, tIdx);
+  renderAreaTable(data.areas, tIdx);
+  renderShiftTable(data.shifts, tIdx);
+  renderCountsTable(data.counts, tIdx);
+  renderLegend(data.areas, hasAny);
+
+  document.getElementById('area-section').style.display   = data.areas.length  ? 'block' : 'none';
+  document.getElementById('shift-section').style.display  = data.shifts.length ? 'block' : 'none';
+  document.getElementById('counts-section').style.display = data.counts.length ? 'block' : 'none';
+  document.getElementById('legend').style.display         = (data.areas.length || data.shifts.length) ? 'block' : 'none';
+
+  wireHeaderSort();
+}
+
+// Header sort (shared lib/table-sort.js). Lets you re-order the Area, Shift and
+// Counts grids by the Employee/Count column or by any day column. Display-only:
+// it re-orders the rendered DOM rows and never touches parsed schedule data or
+// coverage analysis. The listener is delegated on the stable <table> element, so
+// it survives the innerHTML rebuilds these tables do on each render; wiring runs
+// once (guarded) and re-marking the headers happens in headerRow()'s markup.
+let __schedSortWired = false;
+function wireHeaderSort() {
+  if (typeof TableSort === 'undefined') return;
+  ['area-table', 'shift-table', 'counts-table'].forEach(function (id) {
+    const table = document.getElementById(id);
+    if (!table || table._sortWired) return;
+    // col0 -> first cell; dN -> the (N+1)th cell (day columns after the label).
+    TableSort.attachTableSort(table, {
+      getValue: function (r, key) {
+        let idx = 0;
+        if (key && key.charAt(0) === 'd') idx = parseInt(key.slice(1), 10) + 1;
+        const cell = r.children[idx];
+        return cell ? cell.textContent.trim() : '';
+      },
+    });
+    table._sortWired = true;
+  });
+  __schedSortWired = true;
+}
+
+// Coverage panel — surfaces analyzeWeek findings in the tab, citing the
+// principles.md rule behind each (PRD #231). Shown whenever a schedule is
+// loaded: lists each day's findings (cannot-skip / uncovered / fragile /
+// headcount), most-severe first; a green all-clear line when the week has no
+// flags; hidden only when no schedule is loaded. (#233)
+function renderCoverage(data, tIdx) {
+  const section = document.getElementById('coverage-section');
+  const body = document.getElementById('coverage-body');
+  const meta = document.getElementById('coverage-meta');
+
+  if (!data.areas.length || !window.ScheduleAnalysis) {
+    // no schedule → graceful hide. Same hide when lib/schedule-analysis.js
+    // itself is absent (issue 499: the hosted dashboard build excludes it —
+    // it carries the real-name Solo-Capable Runners list from Scheduling
+    // Principle 4 — so the public schedule.html tab degrades to "no
+    // coverage panel" rather than throwing).
+    section.style.display = 'none';
+    body.innerHTML = '';
+    document.getElementById('coverage-map').innerHTML = '';
+    meta.textContent = '';
+    return;
+  }
+
+  const week = ScheduleAnalysis.analyzeWeek(data);
+  renderCoverageMap(week, tIdx);       // layered coverage strip (#234)
+
+  const lines = [];
+  week.days.forEach(function (d) {
+    ScheduleCoverage.summarize(d).forEach(function (f) {
+      lines.push({ weekday: d.weekday || DAYS[d.weekdayIndex], today: d.weekdayIndex === tIdx, finding: f });
+    });
+  });
+
+  section.style.display = 'block';
+  if (!lines.length) {                 // schedule loaded, no flags → reassurance
+    meta.textContent = 'all clear';
+    body.innerHTML = '<div class="cov-line cov-clear"><span class="cov-msg">' +
+      '✓ All sort areas covered — no gaps this week.</span></div>';
+    return;
+  }
+
+  meta.textContent = lines.length + ' issue' + (lines.length === 1 ? '' : 's');
+  body.innerHTML = lines.map(function (l) {
+    const f = l.finding;
+    const rule = f.principle != null
+      ? '<span class="cov-rule">rule ' + esc(String(f.principle)) + '</span>'
+      : '';
+    return '<div class="cov-line cov-' + esc(f.type.toLowerCase()) + (l.today ? ' cov-today' : '') + '">' +
+      '<span class="cov-day">' + esc(l.weekday) + '</span>' +
+      '<span class="cov-msg">' + esc(f.message) + '</span>' +
+      rule +
+      '</div>';
+  }).join('');
+}
+
+// Coverage strip (#234) — a per-day heatmap layered with the grid: rows are the
+// canonical sort areas, columns the days, each cell tinted by coverage health
+// (statusByArea). Additive — the assignment grid keeps its A/B/C/ME/DMG colors.
+function renderCoverageMap(week, tIdx) {
+  const host = document.getElementById('coverage-map');
+  const areas = ScheduleCoverage.SORT_AREAS;
+  let html = '<table class="cov-map"><thead><tr><th class="cov-map-area">Area</th>';
+  DAYS.forEach(function (d, i) { html += '<th class="' + (i === tIdx ? 'today' : '') + '">' + d + '</th>'; });
+  html += '</tr></thead><tbody>';
+  areas.forEach(function (area) {
+    html += '<tr><th class="cov-map-area">' + esc(area) + '</th>';
+    week.days.forEach(function (dy, i) {
+      const status = ScheduleCoverage.statusByArea(dy, areas)[area];
+      const cls = 'cov-cell cov-cell-' + status.replace('cannot-skip', 'cannotskip') + (i === tIdx ? ' today' : '');
+      html += '<td class="' + cls + '" title="' + esc(area + ' — ' + status) + '"></td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>' +
+    '<div class="cov-legend">' +
+    '<span><i class="cov-cell-covered"></i>covered</span>' +
+    '<span><i class="cov-cell-fragile"></i>fragile</span>' +
+    '<span><i class="cov-cell-uncovered"></i>uncovered</span>' +
+    '<span><i class="cov-cell-cannotskip"></i>cage A uncovered</span>' +
+    '</div>';
+  host.innerHTML = html;
+}
+
+// Read-only "Your scheduling rules" panel (#243) — renders the principles mirror
+// (lib/schedule-principles.js, kept in sync with scheduling/principles.md). The
+// tab never edits rules; that's Claude's job (ADR-0010).
+function renderPrinciples() {
+  const body = document.getElementById('principles-body');
+  const rules = (window.SchedulePrinciples && SchedulePrinciples.PRINCIPLES) || [];
+  body.innerHTML = rules.map(function (r) {
+    return '<div class="rule-line">' +
+      '<span class="rule-num">' + esc(String(r.number)) + '</span>' +
+      '<span class="rule-text"><span class="rule-title">' + esc(r.title) + '</span>' +
+      '<span class="rule-why">' + esc(r.rationale) + '</span></span>' +
+      '</div>';
+  }).join('');
+}
+
+function headerRow(firstCol, tIdx) {
+  // Headers are sortable via the shared lib/table-sort.js (see wireHeaderSort).
+  // data-sort="col0" is the name/label column; each day is data-sort="dN".
+  let html = '<thead><tr><th class="name-col sortable" data-sort="col0">' + esc(firstCol) + '</th>';
+  DAYS.forEach((d, i) => {
+    const cls = 'sortable' + (i === tIdx ? ' today' : '');
+    html += '<th class="' + cls + '" data-sort="d' + i + '">' + d + '</th>';
+  });
+  return html + '</tr></thead>';
+}
+
+function renderAreaTable(rows, tIdx) {
+  const table = document.getElementById('area-table');
+  document.getElementById('area-meta').textContent = rows.length + ' employee' + (rows.length === 1 ? '' : 's');
+  let html = headerRow('Employee', tIdx) + '<tbody>';
+  rows.forEach(r => {
+    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
+    r.cells.forEach((c, i) => {
+      const cls = (i === tIdx ? 'today' : '');
+      html += '<td class="' + cls + '">' + areaCellHtml(c) + '</td>';
+    });
+    html += '</tr>';
+  });
+  table.innerHTML = html + '</tbody>';
+}
+
+function areaCellHtml(code) {
+  if (isOff(code)) return '<span class="off-cell">&mdash;</span>';
+  const norm = normalizeCode(code);
+  const entry = AREA_LEGEND[norm];
+  const title = entry ? entry.name + ' — ' + entry.desc : 'Area ' + code;
+  return '<span class="area-pill ' + areaClass(code) + '" title="' + esc(title) + '">' + esc(code.trim()) + '</span>';
+}
+
+function renderShiftTable(rows, tIdx) {
+  const table = document.getElementById('shift-table');
+  let html = headerRow('Employee', tIdx) + '<tbody>';
+  rows.forEach(r => {
+    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
+    r.cells.forEach((c, i) => {
+      const cls = (i === tIdx ? 'today' : '');
+      const val = isOff(c) ? '<span class="off-cell">&mdash;</span>' : esc(c);
+      html += '<td class="' + cls + '">' + val + '</td>';
+    });
+    html += '</tr>';
+  });
+  table.innerHTML = html + '</tbody>';
+}
+
+function renderCountsTable(rows, tIdx) {
+  const table = document.getElementById('counts-table');
+  let html = headerRow('Count', tIdx) + '<tbody>';
+  rows.forEach(r => {
+    const isTotal = /total/i.test(r.label);
+    html += '<tr' + (isTotal ? ' class="count-total"' : '') + '><td class="count-label">' + esc(r.label) + '</td>';
+    r.cells.forEach((c, i) => {
+      const cls = (i === tIdx ? 'today' : '');
+      html += '<td class="' + cls + '">' + esc(c || '0') + '</td>';
+    });
+    html += '</tr>';
+  });
+  table.innerHTML = html + '</tbody>';
+}
+
+// Show the full legend, but only for codes that actually appear in the schedule
+// (plus the Off marker). Unknown codes still render with a generic entry.
+function renderLegend(areaRows, hasAny) {
+  const grid = document.getElementById('legend-grid');
+  if (!hasAny) { grid.innerHTML = ''; return; }
+
+  const used = new Set();
+  areaRows.forEach(r => r.cells.forEach(c => {
+    if (!isOff(c)) used.add(normalizeCode(c));
+  }));
+
+  // Preserve the canonical legend order; append any unknown used codes after.
+  const order = Object.keys(AREA_LEGEND);
+  const ordered = order.filter(k => used.has(k) || k === '—');
+  used.forEach(k => { if (!order.includes(k)) ordered.push(k); });
+
+  grid.innerHTML = ordered.map(code => {
+    const entry = AREA_LEGEND[code] || { cls: 'area-other', name: 'Area ' + code, desc: '' };
+    const pillCls = entry.cls || 'area-other';
+    const pillText = code === '—' ? '—' : code;
+    return '<div class="legend-item">' +
+      '<span class="legend-pill ' + pillCls + '">' + esc(pillText) + '</span>' +
+      '<span class="legend-text"><strong>' + esc(entry.name) + '</strong>' +
+        (entry.desc ? ' — ' + esc(entry.desc) : '') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+// ─── LOAD / PERSIST ───────────────────────────────────────────────────────────
+function setStatus(msg, ok) {
+  const el = document.getElementById('parse-status');
+  el.textContent = msg;
+  el.className = ok ? 'ok' : 'err';
+  if (msg) setTimeout(() => { if (el.textContent === msg) { el.textContent = ''; el.className = ''; } }, 4000);
+}
+
+function loadFromText(raw, persist) {
+  const data = parseScheduleInput(raw);
+  if (!data.areas.length && !data.shifts.length && !data.counts.length) {
+    setStatus('No schedule data found. Check that section headings are present.', false);
+    return false;
+  }
+  renderSchedule(data);
+  if (persist) {
+    // Stamp the manual override with the current schedule version, so it stays
+    // honored until the official schedule changes, then auto-supersedes. (schedule auto-sync)
+    sched.set(raw);
+    sched.setVersion((window.ScheduleData && ScheduleData.VERSION) || '');
+  }
+  const parts = [];
+  if (data.areas.length)  parts.push(data.areas.length + ' assignment rows');
+  if (data.shifts.length) parts.push(data.shifts.length + ' shift rows');
+  if (data.counts.length) parts.push(data.counts.length + ' count rows');
+  setStatus('✓ Loaded ' + parts.join(', '), true);
+  return true;
+}
+
+function loadFromTextarea() {
+  const raw = document.getElementById('schedule-input').value;
+  if (loadFromText(raw, true)) {
+    document.getElementById('loader').style.display = 'none';
+  }
+}
+
+function handleFile(file) {
+  if (!file) return;
+  ToolHelpers.readTextFile(file, 'UTF-8').then(function (text) {
+    document.getElementById('schedule-input').value = text;
+    if (loadFromText(text, true)) {
+      document.getElementById('loader').style.display = 'none';
+    }
+  }).catch(function () { /* unreadable file — same silent no-op as the old raw FileReader */ });
+  document.getElementById('file-input').value = '';
+}
+
+function clearSchedule() {
+  // Clearing a manual override drops back to the repo-embedded current schedule
+  // (not a blank grid) — the dashboard's job is to show the official week.
+  sched.clear();
+  const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
+  document.getElementById('schedule-input').value = embedded;
+  if (embedded) {
+    loadFromText(embedded, false);
+    setStatus('Reset to current schedule', true);
+  } else {
+    renderSchedule({ days: DAYS.slice(), areas: [], shifts: [], counts: [] });
+    setStatus('Cleared', true);
+  }
+}
+
+function toggleLoader() {
+  const el = document.getElementById('loader');
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+(function init() {
+  document.getElementById('today-label').textContent = 'Today: ' + ToolHelpers.formatDateBadge();
+
+  renderPrinciples(); // read-only rulebook — independent of whether a week is loaded
+
+  // A manually loaded week wins only while its version stamp matches the live
+  // embedded schedule; otherwise the embedded schedule (lib/schedule-data.js)
+  // supersedes it, so a newly published week auto-syncs with no Clear. (schedule auto-sync)
+  const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
+  const embeddedVer = (window.ScheduleData && ScheduleData.VERSION) || '';
+  const raw = ToolHelpers.resolveScheduleRaw({
+    saved: sched.get(), savedVer: sched.getVersion(),
+    embedded: embedded, embeddedVer: embeddedVer,
+  });
+  if (raw) {
+    document.getElementById('schedule-input').value = raw;
+    loadFromText(raw, false);
+  } else {
+    renderSchedule({ days: DAYS.slice(), areas: [], shifts: [], counts: [] });
+  }
+})();
+</script>
+<script>ToolHelpers.pinHeader();</script>
+</body>
+</html>

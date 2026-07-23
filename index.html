@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Station 849 — Command Center</title>
+  <style>
+    :root {
+      --fedex-purple: #4D148C;
+      --fedex-orange: #FF6200;
+      --ok: #1f7a44;     --ok-bg: #eafaf0;
+      --warn: #9a5b00;   --warn-bg: #fff4e5;
+      --crit: #b3261e;   --crit-bg: #fde7e7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg); color: var(--text); min-height: 100vh;
+      padding: 20px;
+    }
+    header.app {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--fedex-purple); color: #fff; padding: 16px 22px;
+      border-radius: 8px; margin-bottom: 22px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header.app h1 { font-size: 19px; font-weight: 700; }
+    header.app .subtitle { font-size: 12px; opacity: .7; margin-top: 2px; }
+    .date-badge {
+      background: rgba(255,255,255,.15); border-radius: 6px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600;
+    }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .sync-btn {
+      background: rgba(255,255,255,.15); color: #fff;
+      border: 1px solid rgba(255,255,255,.28); border-radius: 6px;
+      padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+      font-family: inherit; white-space: nowrap; transition: background .12s, border-color .12s;
+    }
+    .sync-btn:hover { background: rgba(255,255,255,.28); }
+    .sync-btn:active { opacity: .85; }
+    .sync-btn.copied { background: var(--ok); border-color: transparent; }
+    .section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--text-faint); margin: 0 0 12px;
+    }
+    a { color: inherit; }
+
+    .area-tag {
+      display:inline-block; background: var(--crit-bg); color: var(--crit);
+      border:1px solid #f3b4b0; border-radius:4px; padding:1px 8px;
+      margin:0 3px 3px 0; font-weight:700; font-size:12px;
+    }
+    .area-tag.soft { background:#fff4e5; color:var(--warn); border-color:#f0d9b0; }
+    .fallback { color:var(--text-muted); font-size:12px; }
+    .fallback b { color:var(--text); }
+    .bf-chip { display:inline-flex; align-items:baseline; gap:4px; padding:2px 8px; border-radius:999px; margin:2px 3px 2px 0; border:1px solid var(--border); }
+    .bf-chip b { color:var(--text); }
+    .bf-cost { font-size:11px; color:var(--text-faint); }
+    .bf-free   { background:#eafaf0; border-color:#bfe9cf; }
+    .bf-reassign { background:#fff7e8; border-color:#f0dcb0; }
+    .bf-reopens-cannot-skip { background:#fdecec; border-color:#f3c0c0; opacity:0.7; }
+    .bf-reopens-cannot-skip b { color:#b91c1c; }
+    .bf-note { color:var(--text-faint); }
+    .bf-partner { font-size:10px; font-weight:700; color:#b45309; background:#fff3e0; border-radius:4px; padding:1px 5px; margin-left:5px; }
+    .crit-note { color: var(--crit); font-weight: 700; font-size: 12px; margin-top: 6px; }
+    .freshness { color:var(--text-fainter); font-size:11px; }
+
+    /* ── Glance Wall (design rationale in ADR-0006) ──────────────────────── */
+    .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;
+      grid-auto-rows:1fr;}
+    .tile{background:var(--surface);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);
+      padding:18px;display:flex;flex-direction:column;text-decoration:none;border-top:5px solid var(--border);
+      transition:transform .12s, box-shadow .12s;}
+    .tile:hover{transform:translateY(-3px);box-shadow:0 6px 18px rgba(0,0,0,.12);}
+    .tile.brand{border-top-color:var(--fedex-purple);}
+    .tile.ok{border-top-color:var(--ok);} .tile.warn{border-top-color:var(--warn);}
+    .tile.crit{border-top-color:var(--crit);}
+    .tile-ico{font-size:24px;margin-bottom:8px;}
+    .tile-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);}
+    .tile-big{font-size:38px;font-weight:800;line-height:1.05;margin:6px 0 2px;color:var(--fedex-purple);}
+    .tile-mid{font-size:18px;font-weight:700;margin:6px 0 2px;}
+    .tile-sub{font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:auto;}
+    .tile-link{font-size:12px;font-weight:700;color:var(--fedex-purple);margin-top:10px;}
+    /* --fedex-purple stays untokenized for dark mode everywhere it's a
+       background/border/gradient (correct in both themes, issue 393 out of
+       scope) — .tile-big and .tile-link are the only TEXT uses, so they get
+       a direct dark override instead of a second competing token. */
+    html[data-theme="dark"] .tile-big,
+    html[data-theme="dark"] .tile-link { color: #c4b5fd; }
+    .ring{--p:0; width:64px;height:64px;border-radius:50%;margin:4px 0 6px;
+      background:conic-gradient(var(--fedex-purple) calc(var(--p)*1%), #ece9f5 0);
+      display:flex;align-items:center;justify-content:center;}
+    .ring span{width:48px;height:48px;border-radius:50%;background:var(--surface);display:flex;
+      align-items:center;justify-content:center;font-size:14px;font-weight:800;}
+
+    /* ── Needs Attention panel (design rationale in ADR-0006) ────────────── */
+    .pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+      padding:3px 9px;border-radius:999px;text-decoration:none;}
+    .pill.warn{background:var(--warn-bg);color:var(--warn);}
+    .pill.muted{background:var(--app-bg);color:var(--text-faint);}
+    .attn{background:var(--surface);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);
+      border-top:4px solid var(--fedex-purple);padding:6px 4px;margin-bottom:22px;}
+    .attn-header{padding:11px 18px;font-size:11px;font-weight:700;text-transform:uppercase;
+      letter-spacing:.08em;color:var(--text-faint);display:flex;align-items:center;gap:10px;}
+    .attn-count{background:var(--crit-bg);color:var(--crit);border-radius:999px;
+      padding:1px 9px;font-size:11px;font-weight:700;letter-spacing:0;}
+    .attn-count.allclear{background:var(--ok-bg);color:var(--ok);}
+    .attn-rows{border-top:1px solid var(--border-soft);}
+    .attn-row{display:flex;gap:12px;align-items:flex-start;padding:13px 18px;border-bottom:1px solid var(--border-soft);}
+    .attn-row:last-child{border-bottom:none;}
+    .attn-ico{font-size:18px;line-height:1.2;}
+    .attn-body{flex:1;}
+    .attn-title{font-weight:700;font-size:14px;margin-bottom:2px;}
+    .attn-detail{font-size:12px;color:var(--text-muted);line-height:1.5;}
+    .attn-empty{padding:18px;color:var(--ok);font-size:13px;}
+    .attn-note{padding:10px 18px;font-size:11px;color:var(--text-fainter);line-height:1.5;border-top:1px solid var(--border-soft);}
+    /* ── collapse + dismiss/Handled (#145) ─────────────────────────────────── */
+    .attn-header{cursor:pointer;user-select:none;}
+    .attn-chev{font-size:12px;color:var(--text-fainter);transition:transform .15s;margin-right:2px;}
+    .attn.collapsed .attn-chev{transform:rotate(-90deg);}
+    .attn.collapsed .attn-rows{display:none;}
+    .attn-act{flex:none;background:none;border:1px solid var(--border-strong);border-radius:8px;
+      cursor:pointer;font-size:13px;line-height:1;padding:5px 8px;color:var(--text-faint);}
+    .attn-act:hover{background:var(--surface-2);color:var(--text-muted);}
+    .attn-handled{border-top:1px solid var(--border-soft);}
+    .attn-handled-header{padding:10px 18px;font-size:11px;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-fainter);cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;}
+    .attn-handled.collapsed .attn-row{display:none;}
+    .attn-handled .attn-row .attn-title{text-decoration:line-through;color:var(--text-fainter);}
+    .attn-handled .attn-row .attn-detail{color:var(--text-fainter);}
+    .out-today{font-size:12px;color:var(--text-muted);margin-top:8px;background:var(--surface-2);
+      border-radius:6px;padding:7px 11px;line-height:1.45;}
+
+    footer { text-align:center; font-size:11px; color:var(--text-fainter); margin-top:18px; }
+
+    .tile { min-height: 48px; }
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .wall { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .tile { padding: 16px 14px; min-height: 120px; }
+      .tile-big { font-size: 34px; }
+    }
+    @media (max-width: 420px) {
+      .wall { grid-template-columns: 1fr; }
+    }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+
+<header class="app">
+  <div>
+    <h1>Station 849 — Command Center</h1>
+    <div class="subtitle">NPHO — Phoenix, AZ</div>
+  </div>
+  <div class="header-right">
+    <button type="button" id="sync-btn" class="sync-btn"
+      title="Copy this machine's git pull command — paste it into the terminal to sync">⟳ Copy sync command</button>
+    <div class="date-badge" id="date-badge"></div>
+  </div>
+</header>
+
+<div id="attention"></div>
+
+<div class="section-label">Glance Wall</div>
+<div class="wall" id="glance-wall"></div>
+
+<footer>Station 849 / NPHO — Internal Use Only · read-only mirror, not the record</footer>
+
+<script src="lib/tool-helpers.js"></script>
+<script src="lib/qa-checklist.js"></script>
+<script src="lib/time-off.js"></script>
+<script src="lib/attendance-rules.js"></script>
+<script src="lib/coverage-reconcile.js"></script>
+<script src="lib/schedule-analysis.js"></script>
+<script src="lib/backfill-bench.js"></script>
+<script src="lib/backfill.js"></script>
+<script src="lib/command-center.js"></script>
+<script src="lib/schedule-data.js"></script>
+<script>
+  // ── Command Center hub (issue #142, ADR-0006) ────────────────────────────
+  // A strictly read-only mirror: it reads the other tools' localStorage, runs
+  // the schedule through the shared ToolHelpers path, and renders the Glance
+  // Wall view model from lib/command-center.js. It never writes, never syncs.
+  // Attendance signals (Attendance Today tile, out-today context, the Needs
+  // Attention panel) arrive in #143/#144.
+
+  // ── Hard-required-script preflight ────────────────────────────────────────
+  // A stale/incomplete clone (or a bad merge deleting lib/ files) has twice
+  // left dashboard.html loading with 404'd <script src> tags: every soft-
+  // guarded lib (CoverageReconcile, ScheduleData, QaChecklist, Backfill*) is
+  // consumed via `root && root.X` so it degrades safely, but ToolHelpers,
+  // CommandCenter, and AttendanceRules are hard-required — render()/
+  // renderAttention() call them unguarded, and AttendanceRules is called
+  // unconditionally inside CommandCenter.derive()'s deriveAttendance(), so a
+  // missing copy of any of the three used to throw an unguarded
+  // ReferenceError from top-level code, leaving only the header/footer behind
+  // a silently blank Glance Wall. Check with `typeof window[name]` (never bare
+  // identifier access) so the check itself can't throw, render a visible
+  // error card naming the missing file(s), then re-throw so the console still
+  // shows the real failure to anyone debugging.
+  (function () {
+    var REQUIRED = [
+      ['ToolHelpers', 'lib/tool-helpers.js'],
+      ['CommandCenter', 'lib/command-center.js'],
+      ['AttendanceRules', 'lib/attendance-rules.js'],
+    ];
+    var missing = REQUIRED.filter(function (r) { return typeof window[r[0]] === 'undefined'; });
+    if (!missing.length) return;
+    var files = missing.map(function (r) { return r[1]; }).join(', ');
+    var host = document.getElementById('glance-wall');
+    if (host) {
+      host.innerHTML = '<div class="tile crit" style="grid-column:1/-1">' +
+        '<div class="tile-ico">⚠</div>' +
+        '<div class="tile-label">Dashboard can&#39;t start</div>' +
+        '<div class="tile-mid">Required script(s) failed to load: ' + files + '</div>' +
+        '<div class="tile-sub">Check that the repo copy is complete (git status / re-clone).</div>' +
+        '</div>';
+    }
+    throw new Error('Dashboard preflight: missing required script(s): ' + files);
+  })();
+
+  const esc = ToolHelpers.escapeHtml;
+  const sched = ToolHelpers.createScheduleStore();
+  const store = ToolHelpers.createStorage(); // default namespace: shared keys
+
+  // Date badge (display only — never feeds a classification).
+  document.getElementById('date-badge').textContent = ToolHelpers.formatDateBadge();
+
+  // Resolve the schedule day-view + coverage from stored raw text. A malformed
+  // or empty store must never blank or break the hub — on any failure we return
+  // nulls and the deriver renders the empty coverage state.
+  function readScheduleInputs() {
+    // A manually loaded week wins only while its version stamp matches the live
+    // schedule; otherwise the repo-embedded schedule supersedes it, so the hub
+    // auto-syncs to current-schedule.md with no manual Clear. (schedule auto-sync)
+    const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
+    const embeddedVer = (window.ScheduleData && ScheduleData.VERSION) || '';
+    const raw = ToolHelpers.resolveScheduleRaw({
+      saved: sched.get(), savedVer: sched.getVersion(),
+      embedded: embedded, embeddedVer: embeddedVer,
+    });
+    if (!raw || !String(raw).trim()) return { scheduleView: null, coverage: null };
+    try {
+      const parsed = ToolHelpers.parseScheduleInput(raw);
+      const hasData = parsed && (parsed.areas.length || parsed.counts.length || parsed.shifts.length);
+      if (!hasData) return { scheduleView: null, coverage: null };
+      const idx = ToolHelpers.todayIndex();
+      const view = ToolHelpers.selectDay(parsed, idx);
+      const coverage = ToolHelpers.deriveCoverage(view.assignedAreas, ToolHelpers.SORT_AREAS);
+      // Per-area roster feeds Floor-Absence coverage reconciliation (ADR-0008).
+      const assigneesByArea = ToolHelpers.assigneesByArea(parsed, idx);
+      return { scheduleView: view, coverage: coverage, assigneesByArea: assigneesByArea };
+    } catch (e) {
+      return { scheduleView: null, coverage: null, assigneesByArea: null };
+    }
+  }
+
+  function readChecklistState() {
+    try { return store.get(QaChecklist.todayKey(), {}); }
+    catch (e) { return {}; }
+  }
+
+  function readMasterlistRows() {
+    try {
+      const rows = store.get('masterlist_session', []);
+      return Array.isArray(rows) ? rows : [];
+    } catch (e) { return []; }
+  }
+
+  function readEntries() {
+    try {
+      const rows = store.get('timeoff_entries', []);
+      return Array.isArray(rows) ? rows : [];
+    } catch (e) { return []; }
+  }
+
+  function readIbnoSession() {
+    try { return store.get('ibno_session', null); }
+    catch (e) { return null; }
+  }
+
+  // Live backfill recommendation (#250): present Bench candidates, cost-tiered
+  // (cheap first; the "would re-open Cage A" tier demoted/greyed), each tagged
+  // with the cost of moving them. Falls back to the static Bench note when no
+  // recommendation is available, and reads "escalate" when no one's present.
+  // Names are trusted constants; only the free-text note is escaped.
+  // The backfill detail HTML (shared by the Coverage tile and the Needs
+  // Attention row so they never diverge): cost-tiered chips, or the static Bench
+  // note when no recommendation is available, or "escalate" when no one's present.
+  function backfillInner(u) {
+    const bf = u.backfill;
+    if (!bf || !bf.candidates) {
+      return u.first && u.first.length ? 'try <b>' + u.first.map(esc).join(' · ') + '</b> — ' + esc(u.note) : esc(u.note);
+    }
+    if (bf.escalate) {
+      return '<b>no one present</b> — escalate · ' + esc(u.note);
+    }
+    const chips = bf.candidates.map(function (c) {
+      const cost = c.tier === 'free' ? c.currentArea + ', free'
+        : c.tier === 'reassign' ? c.currentArea + ' → opens ' + c.opens.join('/')
+        : c.currentArea + ' — re-opens ' + c.opens.join('/');
+      const partner = c.needsPartner ? '<span class="bf-partner">needs a partner</span>' : '';
+      return '<span class="bf-chip bf-' + c.tier + '"><b>' + esc(c.name) + '</b> <span class="bf-cost">' + esc(cost) + '</span>' + partner + '</span>';
+    }).join(' ');
+    return chips + ' <span class="bf-note">— ' + esc(u.note) + '</span>';
+  }
+
+  function fallbackLine(u) { return '<span class="fallback">' + backfillInner(u) + '</span>'; }
+
+  // Neutral "out today" coverage context — protected-sick / scheduled absences.
+  // Never a discipline event; explains why an area is short.
+  function outTodayLine(cov) {
+    if (!cov.outToday || !cov.outToday.length) return '';
+    const list = cov.outToday.map(function (o) {
+      return esc(o.name) + ' (' + esc(o.reason) + ')';
+    }).join(' · ');
+    return '<div class="out-today">Out today: ' + list + '</div>';
+  }
+
+  function coverageTile(cov) {
+    if (!cov.loaded) {
+      return '<a class="tile" href="schedule.html" style="border-top-color:var(--border)">' +
+        '<div class="tile-ico">📅</div>' +
+        '<div class="tile-label">Coverage</div>' +
+        '<div class="tile-mid">No schedule loaded</div>' +
+        '<div class="tile-sub">load this week’s schedule to see coverage</div>' +
+        outTodayLine(cov) +
+        '<div class="tile-link">Load a schedule →</div></a>';
+    }
+    let inner, cls;
+    if (cov.allCovered) {
+      cls = 'ok';
+      inner = '<div class="tile-big" style="font-size:24px;color:var(--ok)">All covered</div>' +
+        '<div class="tile-sub">' + ToolHelpers.SORT_AREAS.map(esc).join(' · ') + '</div>';
+    } else {
+      cls = cov.cannotSkip.length ? 'crit' : 'warn';
+      const tags = cov.uncovered.map(function (u) {
+        return '<span class="area-tag' + (u.cannotSkip ? '' : ' soft') + '">' + esc(u.area) + '</span>';
+      }).join('');
+      const lines = cov.uncovered.map(fallbackLine).join('<br>');
+      const critNote = cov.cannotSkip.length
+        ? '<div class="crit-note">⚠ High VAL cage (A) uncovered — cannot skip.</div>'
+        : '';
+      inner = '<div class="tile-mid">' + tags + '</div>' +
+        '<div class="tile-sub">' + lines + critNote + '</div>';
+    }
+    return '<a class="tile ' + cls + '" href="schedule.html">' +
+      '<div class="tile-ico">📅</div>' +
+      '<div class="tile-label">Coverage · ' + esc(cov.weekday || '') + '</div>' +
+      inner +
+      outTodayLine(cov) +
+      '<div class="freshness">schedule as last loaded</div>' +
+      '<div class="tile-link">Schedule →</div></a>';
+  }
+
+  function attendanceTile(att) {
+    const cls = att.todayCount ? 'warn' : 'ok';
+    const body = att.today.length
+      ? att.today.map(function (e) {
+          return esc(e.name) + ' — ' + esc(e.type);
+        }).join('<br>')
+      : 'no counted events';
+    return '<a class="tile ' + cls + '" href="https://tylerm08martinez-wq.github.io/timeoff-tool/">' +
+      '<div class="tile-ico">📋</div>' +
+      '<div class="tile-label">Attendance Today</div>' +
+      '<div class="tile-big">' + att.todayCount + '</div>' +
+      '<div class="tile-sub">' + body +
+      '<br><span class="freshness">as of last sync · open Time-Off for the record</span></div>' +
+      '<div class="tile-link">Log →</div></a>';
+  }
+
+  function checklistTile(qa) {
+    const phases = qa.phases.map(function (p) {
+      return esc(p.name) + ' ' + p.done + '/' + p.total;
+    }).join(' · ');
+    return '<a class="tile brand" href="qa-checklist.html">' +
+      '<div class="tile-ico">✅</div>' +
+      '<div class="tile-label">QA Checklist</div>' +
+      '<div class="ring" style="--p:' + qa.percent + '"><span>' + qa.percent + '%</span></div>' +
+      '<div class="tile-sub">' + phases + '</div>' +
+      '<div class="tile-link">Open →</div></a>';
+  }
+
+  function masterlistTile(ml) {
+    return '<a class="tile brand" href="masterlist-builder.html">' +
+      '<div class="tile-ico">📄</div>' +
+      '<div class="tile-label">Masterlist</div>' +
+      '<div class="tile-big">' + ml.count + '</div>' +
+      '<div class="tile-sub">manual assignments today</div>' +
+      '<div class="tile-link">Build →</div></a>';
+  }
+
+  // The IBNO Coder runs as its own hosted build (github.io/ibno-tool) so it
+  // auto-updates and isn't subject to the stale local-folder copy. The dashboard
+  // tile points there. Note: the live "to code" count below only appears when an
+  // Relative link to the IBNO Coder sibling file, so the dashboard and the tool
+  // open from the SAME local folder (file://) on each device — the back button in
+  // the tool returns here, and the IBNO session in this page's storage matches the
+  // tool's. (A hosted https build can't reach a local dashboard, so we run local;
+  // Repeat History still syncs across devices via the tool's GitHub sync.)
+  const IBNO_URL = 'ibno-coder.html';
+
+  function ibnoTile(ibno) {
+    // Live count when a session is loaded; otherwise a plain launcher (#159).
+    if (!ibno || !ibno.loaded) {
+      return launcherTile('📦', 'IBNO Coder', 'Code scans', IBNO_URL);
+    }
+    const cls = ibno.toCode ? 'warn' : 'ok';
+    return '<a class="tile ' + cls + '" href="' + IBNO_URL + '">' +
+      '<div class="tile-ico">📦</div>' +
+      '<div class="tile-label">IBNO Coder</div>' +
+      '<div class="tile-big">' + ibno.toCode + '</div>' +
+      '<div class="tile-sub">to code · ' + ibno.autoReady + ' auto-ready' +
+      '<br><span class="freshness">as of last sync · open IBNO for the records</span></div>' +
+      '<div class="tile-link">Open →</div></a>';
+  }
+
+  function launcherTile(icon, name, mid, href) {
+    return '<a class="tile" href="' + href + '" style="border-top-color:var(--border)">' +
+      '<div class="tile-ico">' + icon + '</div>' +
+      '<div class="tile-label">' + esc(name) + '</div>' +
+      '<div class="tile-mid">' + mid + '</div>' +
+      '<div class="tile-sub"></div>' +
+      '<div class="tile-link">Open →</div></a>';
+  }
+
+  // Needs Attention panel: priority-ordered rows from the deriver. Render-only
+  // for #143 — dismiss / Handled / collapse arrive in #145, Heads-ups in #144.
+  // Every row points back to the tool of record; the hub never finalizes.
+  function attentionRow(item, handled) {
+    let ico, title, detail, trail;
+    if (item.tier === 'critical-area' || item.tier === 'area') {
+      const crit = item.tier === 'critical-area';
+      ico = crit ? '⛔' : '⚠️';
+      title = esc(item.title);
+      detail = backfillInner(item); // same cost-tiered bench as the Coverage tile
+      trail = '<a class="pill warn" href="schedule.html">Schedule →</a>';
+    } else if (item.tier === 'flag') {
+      ico = '🚩';
+      title = esc(item.admin) + ' — Flag: house standard met';
+      detail = esc(item.message); // carries "consider a documented conversation"
+      trail = '<a class="pill warn" href="https://tylerm08martinez-wq.github.io/timeoff-tool/">Log →</a>';
+    } else if (item.tier === 'headsup') { // facts-only awareness, subordinate to a Flag — no discipline language
+      ico = '👀';
+      title = esc(item.admin) + ' — heads-up';
+      detail = esc(item.message); // facts-only: "N Xs in 30 days — 1 away from the limit of M"
+      trail = '<a class="pill muted" href="https://tylerm08martinez-wq.github.io/timeoff-tool/">View →</a>';
+    } else if (item.tier === 'nomap') { // fail-loud: a Floor Absence that matched no scheduled area
+      ico = '❓';
+      title = esc(item.title);
+      detail = 'Out today but not on the loaded schedule — check the spelling, or whether they were scheduled.';
+      trail = '<a class="pill warn" href="schedule.html">Schedule →</a>';
+    } else { // event
+      ico = '📝';
+      title = esc(item.name) + ' — ' + esc(item.type);
+      detail = 'logged today';
+      trail = '<a class="pill muted" href="https://tylerm08martinez-wq.github.io/timeoff-tool/">View →</a>';
+    }
+    // ✓ dismiss (active) / ↩ restore (handled) — declutter only; never a record.
+    const k = esc(String(item.key || ''));
+    const act = handled
+      ? '<button class="attn-act attn-restore" data-action="restore" data-key="' + k + '" title="Restore to active">↩</button>'
+      : '<button class="attn-act attn-dismiss" data-action="dismiss" data-key="' + k + '" title="Mark handled (declutter only)">✓</button>';
+    return '<div class="attn-row"><div class="attn-ico">' + ico + '</div>' +
+      '<div class="attn-body"><div class="attn-title">' + title + '</div>' +
+      '<div class="attn-detail">' + detail + '</div></div>' + trail + act + '</div>';
+  }
+
+  // Hub-local view state (#145). NOT a record and NOT synced — this is the
+  // dashboard's own declutter/collapse state in its own `cc` namespace, so
+  // ADR-0006's read-only-mirror contract (no writes to the tools' records)
+  // still holds: dismissing a row hides it from the board, never from the
+  // Time-Off tool, where the actual attendance record lives.
+  const view = ToolHelpers.createStorage('cc');
+  function dismissedSet() {
+    const arr = view.get('dismissed', []);
+    return Array.isArray(arr) ? arr : [];
+  }
+  // Apply dismissal scoping (#146): drop stale day-scoped keys and persist the
+  // pruned set, so coverage/event dismissals auto-clear at the next sort while
+  // a worsened Flag (new count → new key) re-surfaces on its own.
+  function pruneDismissedNow() {
+    const raw = dismissedSet();
+    const kept = CommandCenter.pruneDismissed(raw, new Date());
+    if (kept.length !== raw.length) view.set('dismissed', kept);
+    return kept;
+  }
+  function isCollapsed() { return view.get('collapsed', false) === true; }
+  function handledCollapsed() { return view.get('handledCollapsed', true) === true; }
+
+  function renderAttention(model) {
+    const host = document.getElementById('attention');
+    if (!host) return;
+    const items = model.attention || [];
+    const dismissed = pruneDismissedNow();
+    const isDismissed = function (it) { return dismissed.indexOf(String(it.key)) !== -1; };
+    const active = items.filter(function (it) { return !isDismissed(it); });
+    const handled = items.filter(isDismissed);
+
+    if (!items.length) {
+      host.innerHTML = '<div class="attn"><div class="attn-header">Needs Attention ' +
+        '<span class="attn-count allclear">all clear</span></div>' +
+        '<div class="attn-rows"><div class="attn-empty">✓ Nothing needs attention — ' +
+        'coverage full, no attendance events.</div></div></div>';
+      return;
+    }
+
+    const collapsedCls = isCollapsed() ? ' collapsed' : '';
+    const badge = active.length
+      ? '<span class="attn-count">' + active.length + '</span>'
+      : '<span class="attn-count allclear">all clear</span>';
+    const activeRows = active.length
+      ? active.map(function (it) { return attentionRow(it, false); }).join('')
+      : '<div class="attn-empty">✓ Nothing active — all items handled below.</div>';
+
+    let handledBlock = '';
+    if (handled.length) {
+      const hCls = handledCollapsed() ? ' collapsed' : '';
+      handledBlock = '<div class="attn-handled' + hCls + '">' +
+        '<div class="attn-handled-header" data-action="toggle-handled">' +
+        '<span class="attn-chev">▾</span>Handled (' + handled.length + ')</div>' +
+        handled.map(function (it) { return attentionRow(it, true); }).join('') +
+        '<div class="attn-note">Handled declutters the board — it is <b>not</b> a ' +
+        'logged action. Finalize any discipline in the Time-Off tool, where the record lives.</div>' +
+        '</div>';
+    }
+
+    host.innerHTML = '<div class="attn' + collapsedCls + '">' +
+      '<div class="attn-header" data-action="toggle"><span class="attn-chev">▾</span>Needs Attention ' +
+      badge + '</div>' +
+      '<div class="attn-rows">' + activeRows +
+      '<div class="attn-note">Read-only mirror of this device — finalize any ' +
+      'discipline in the synced Time-Off tool, against freshly-synced data.</div>' +
+      handledBlock +
+      '</div></div>';
+  }
+
+  // Delegated interaction for the Needs Attention panel (#145). Rebuilt markup
+  // each render, so listen once on the host and dispatch by data-action.
+  (function () {
+    const host = document.getElementById('attention');
+    if (!host) return;
+    host.addEventListener('click', function (e) {
+      const el = e.target.closest('[data-action]');
+      if (!el) return;
+      const action = el.getAttribute('data-action');
+      if (action === 'toggle') {
+        view.set('collapsed', !isCollapsed());
+      } else if (action === 'toggle-handled') {
+        view.set('handledCollapsed', !handledCollapsed());
+      } else if (action === 'dismiss' || action === 'restore') {
+        const key = el.getAttribute('data-key');
+        const set = dismissedSet().filter(function (k) { return k !== key; });
+        if (action === 'dismiss' && key) set.push(key);
+        view.set('dismissed', set);
+      } else {
+        return;
+      }
+      render();
+    });
+  })();
+
+  function render() {
+    const host = document.getElementById('glance-wall');
+    if (!host) return;
+    const inputs = readScheduleInputs();
+    const model = CommandCenter.derive({
+      scheduleView: inputs.scheduleView,
+      coverage: inputs.coverage,
+      assigneesByArea: inputs.assigneesByArea,
+      checklistState: readChecklistState(),
+      masterlistRows: readMasterlistRows(),
+      entries: readEntries(),
+      ibnoSession: readIbnoSession(),
+      refDate: new Date(),
+    });
+    renderAttention(model);
+    host.innerHTML =
+      coverageTile(model.coverage) +
+      checklistTile(model.checklist) +
+      attendanceTile(model.attendance) +
+      masterlistTile(model.masterlist) +
+      ibnoTile(model.ibno) +
+      launcherTile('🔁', 'DSW', 'Catch In-Area 12s', 'dsw.html') +
+      launcherTile('📍', 'Address Catcher', 'Fix known bad addresses', 'address-catcher.html') +
+      launcherTile('🚚', 'NVS Builder', 'Print per-belt no-van-scan sheets', 'nvs-builder.html');
+  }
+
+  render();
+  // Reflect changes made in another tool/tab without a manual reload.
+  window.addEventListener('storage', function () { render(); });
+
+  // ── Copy sync command ────────────────────────────────────────────────────
+  // Convenience only — the page never runs git, it just hands you the command
+  // to paste into a terminal. The repo path is read from this file's own
+  // location, so the same button copies the right path on the Mac AND the work
+  // PC with nothing hardcoded. `git -C <dir>` needs no `cd`, and works the same
+  // in bash and PowerShell.
+  (function () {
+    var btn = document.getElementById('sync-btn');
+    if (!btn) return;
+
+    function syncCommand() {
+      // Only file:// gives us a real filesystem path. Anything else (served over
+      // http) → fall back to a cd-less command the user runs from the repo dir.
+      if (window.location.protocol !== 'file:') return 'git pull --rebase --autostash';
+      var path = decodeURIComponent(window.location.pathname).replace(/\/[^/]*$/, ''); // strip filename
+      if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1); // Windows: "/C:/..." → "C:/..."
+      return 'git -C "' + path + '" pull --rebase --autostash';
+    }
+
+    function flash(ok) {
+      var orig = '⟳ Copy sync command';
+      btn.textContent = ok ? '✓ Copied' : '⚠ Copy failed';
+      btn.classList.toggle('copied', ok);
+      setTimeout(function () { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+    }
+
+    function legacyCopy(text) {
+      // file:// is not a secure context in some browsers, so navigator.clipboard
+      // can be undefined — fall back to a hidden textarea + execCommand.
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
+
+    btn.addEventListener('click', function () {
+      var cmd = syncCommand();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).then(function () { flash(true); },
+          function () { flash(legacyCopy(cmd)); });
+      } else {
+        flash(legacyCopy(cmd));
+      }
+    });
+  })();
+</script>
+<script>if (typeof window.ToolHelpers !== 'undefined') { ToolHelpers.pinHeader(); }</script>
+</body>
+</html>

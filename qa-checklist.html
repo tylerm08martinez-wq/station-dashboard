@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QA Checklist — Station 849</title>
+  <style>
+    /* Brand-ink text token (issue 393): theme.css deliberately leaves
+       FedEx purple untokenized for backgrounds/borders/pills (stays
+       meaningful in both themes), but purple TEXT on a dark surface is
+       illegible — this token is scoped to text-color uses only. */
+    :root { --brand-ink: #4D148C; }
+    html[data-theme="dark"] { --brand-ink: #c4b5fd; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    header .date-label { font-size: 12px; opacity: 0.75; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:active { opacity: 0.85; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover { background: #3a0f6a; }
+    .btn-gray { background: #e4e4e7; color: #333; }
+    .btn-gray:hover { background: #d1d1d6; }
+
+    /* ── Overall progress bar ─────────────────────────────────────────────────── */
+    #overall {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    #overall .summary-text { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
+    #overall .summary-text .count { color: var(--brand-ink); }
+    .progress-track {
+      flex: 1;
+      height: 12px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4D148C, #FF6200);
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+    #overall .pct { font-size: 14px; font-weight: 700; color: var(--brand-ink); width: 44px; text-align: right; }
+
+    .actions-bar { margin-bottom: 20px; }
+
+    /* ── Phase sections ───────────────────────────────────────────────────────── */
+    .phase {
+      background: var(--surface);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      overflow: hidden;
+      border-top: 4px solid #4D148C;
+    }
+    .phase.during   { border-top-color: #FF6200; }
+    .phase.closeout { border-top-color: #16a34a; }
+
+    .phase-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .phase-header h2 { font-size: 15px; font-weight: 700; }
+    .phase.during   .phase-header h2 { color: #c2410c; }
+    .phase.closeout .phase-header h2 { color: #15803d; }
+    .phase-badge {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      padding: 2px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .phase-badge.complete { background: #dcfce7; color: #15803d; }
+
+    ul.items { list-style: none; }
+    li.item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.1s;
+      user-select: none;
+    }
+    li.item:last-child { border-bottom: none; }
+    li.item:hover { background: var(--surface-2); }
+
+    li.item input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      margin-top: 1px;
+      border: 2px solid #c4b5e0;
+      border-radius: 5px;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    li.item input[type="checkbox"]:hover { border-color: #4D148C; }
+    li.item input[type="checkbox"]:checked { background: #4D148C; border-color: #4D148C; }
+    li.item input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 1px;
+      width: 6px;
+      height: 11px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .item-body { flex: 1; }
+    .item-text { font-size: 14px; line-height: 1.45; color: var(--text); }
+    .item-note { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+    li.item.done .item-text {
+      text-decoration: line-through;
+      color: var(--text-fainter);
+    }
+    li.item.done .item-note { color: var(--text-fainter); }
+
+    .sys-tag {
+      display: inline-block;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 1px 7px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .item-link {
+      display: inline-block;
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--brand-ink);
+      text-decoration: none;
+      vertical-align: middle;
+    }
+    .item-link:hover { text-decoration: underline; color: #FF6200; }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-fainter);
+      margin-top: 8px;
+    }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="dashboard.html" style="color:rgba(255,255,255,0.7);font-size:12px;text-decoration:none;font-weight:600;letter-spacing:0.02em;transition:color 0.12s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">&larr; Dashboard</a>
+    <h1>QA Checklist &mdash; Station 849</h1>
+  </div>
+  <span class="date-label" id="date-label"></span>
+</header>
+
+<div id="overall">
+  <div class="summary-text"><span class="count" id="overall-done">0</span> / <span id="overall-total">0</span> tasks complete</div>
+  <div class="progress-track"><div class="progress-fill" id="overall-fill"></div></div>
+  <div class="pct" id="overall-pct">0%</div>
+</div>
+
+<div class="actions-bar">
+  <button class="btn btn-gray" id="reset-btn" onclick="resetSort()">&#8635; Reset Sort</button>
+</div>
+
+<div id="phases"></div>
+
+<footer>Station 849 / NPHO &mdash; Internal Use Only</footer>
+
+<script src="lib/tool-helpers.js"></script>
+<script src="lib/qa-checklist.js"></script>
+<script>
+// ─── CHECKLIST DEFINITION ───────────────────────────────────────────────────────
+// Items sourced from checklists/QA Checklist.md, organized into the three sort
+// phases per issue #45. `sys` notes an external system referenced by the task
+// (shown as a tag, not linked — no URLs available). `link` adds a direct tool link.
+const PHASES = [
+  {
+    id: 'pre-sort',
+    name: 'Pre-Sort',
+    cls: '',
+    items: [
+      { id: 'cal',        text: 'Check calendar' },
+      { id: 'aging',      text: 'Check QA aging — identify packages needing RTS' },
+      { id: 'dsw-12s',    text: 'Use DSW to find 12s scanned to same truck', sys: 'DSW' },
+      { id: 'multiday',   text: 'Check multi-day van scans' },
+      { id: 'ibno',       text: 'Check IBNO', link: { href: 'ibno-coder.html', label: 'IBNO Coder →' } },
+      { id: 'emails',     text: 'Check emails' },
+    ],
+  },
+  {
+    id: 'during-sort',
+    name: 'During Sort',
+    cls: 'during',
+    items: [
+      { id: 'inbound-van', text: 'Inbound & Van Scans — code closed packages, misloads, ReadyCloud' },
+      { id: 'walmart',     text: 'Check 889 / 998 report for Walmart packages' },
+      { id: 'masterlist',  text: 'Add manual route assignments to the MasterList' },
+      { id: 'hazmat',      text: 'Hazmat checkup', sys: 'DGNAV' },
+      { id: 'swak-999',    text: 'Check 999 and belt number detail for repeated packages needing SWAK' },
+      { id: 'appts',       text: 'Check appointments scanned / High VAL cage' },
+      { id: 'team-time',   text: 'Check and approve QA team time' },
+      { id: 'extra-time',  text: 'If extra time: review previous day Inbound and Van Scans' },
+    ],
+  },
+  {
+    id: 'closeout',
+    name: 'Closeout',
+    cls: 'closeout',
+    items: [
+      { id: 'ussc-shutdown', text: 'Go into USSC to shut down the sort', sys: 'USSC' },
+      { id: 'closure-trailer', text: 'Build closure trailer', sys: 'TMS' },
+    ],
+  },
+];
+
+const ALL_IDS = PHASES.flatMap(p => p.items.map(i => i.id));
+
+// ─── DATE / STORAGE KEY ─────────────────────────────────────────────────────────
+// State is keyed to today's Phoenix calendar date so a new sort day starts fresh.
+const STORAGE_KEY = todayKey();
+const toolStorage = ToolHelpers.createStorage();
+
+// ─── STATE PERSISTENCE ──────────────────────────────────────────────────────────
+// State is a plain { id: true } map of completed items. Opening on a new day
+// produces a brand-new key, so prior days do not restore — an automatic reset.
+function loadState() {
+  const parsed = toolStorage.get(STORAGE_KEY, {});
+  return (parsed && typeof parsed === 'object') ? parsed : {};
+}
+
+function saveState(state) {
+  toolStorage.set(STORAGE_KEY, state);
+}
+
+let state = loadState();
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────────
+function isDone(id) { return state[id] === true; }
+
+// ─── RENDER ─────────────────────────────────────────────────────────────────────
+function render() {
+  const container = document.getElementById('phases');
+  container.innerHTML = '';
+
+  PHASES.forEach(phase => {
+    const section = document.createElement('section');
+    section.className = 'phase' + (phase.cls ? ' ' + phase.cls : '');
+
+    const doneCount = phase.items.filter(i => isDone(i.id)).length;
+    const allDone = doneCount === phase.items.length;
+
+    const header = document.createElement('div');
+    header.className = 'phase-header';
+    header.innerHTML =
+      '<h2>' + ToolHelpers.escapeHtml(phase.name) + '</h2>' +
+      '<span class="phase-badge' + (allDone ? ' complete' : '') + '">' +
+        doneCount + ' / ' + phase.items.length +
+      '</span>';
+    section.appendChild(header);
+
+    const ul = document.createElement('ul');
+    ul.className = 'items';
+
+    phase.items.forEach(item => {
+      const li = document.createElement('li');
+      li.className = 'item' + (isDone(item.id) ? ' done' : '');
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = isDone(item.id);
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => toggleItem(item.id));
+
+      const body = document.createElement('div');
+      body.className = 'item-body';
+      let textHtml = '<span class="item-text">' + ToolHelpers.escapeHtml(item.text) + '</span>';
+      if (item.sys)  textHtml += '<span class="sys-tag">' + ToolHelpers.escapeHtml(item.sys) + '</span>';
+      if (item.link) textHtml += '<a class="item-link" href="' + ToolHelpers.escapeHtml(item.link.href) + '">' + ToolHelpers.escapeHtml(item.link.label) + '</a>';
+      body.innerHTML = textHtml;
+
+      li.appendChild(cb);
+      li.appendChild(body);
+
+      // Tapping anywhere on the row toggles it (except the link).
+      li.addEventListener('click', e => {
+        if (e.target.closest('.item-link') || e.target.tagName === 'INPUT') return;
+        toggleItem(item.id);
+      });
+
+      ul.appendChild(li);
+    });
+
+    section.appendChild(ul);
+    container.appendChild(section);
+  });
+
+  updateOverall();
+}
+
+function updateOverall() {
+  const stats = completionStats(state, ALL_IDS);
+  document.getElementById('overall-done').textContent  = stats.done;
+  document.getElementById('overall-total').textContent = stats.total;
+  document.getElementById('overall-pct').textContent   = stats.percent + '%';
+  document.getElementById('overall-fill').style.width  = stats.percent + '%';
+}
+
+// ─── ACTIONS ────────────────────────────────────────────────────────────────────
+function toggleItem(id) {
+  if (state[id]) delete state[id];
+  else state[id] = true;
+  saveState(state);
+  render();
+}
+
+function resetSort() {
+  if (!confirm('Reset the checklist for a new sort? This clears all checked items for today.')) return;
+  state = {};
+  toolStorage.remove(STORAGE_KEY);
+  render();
+}
+
+// ─── INIT ───────────────────────────────────────────────────────────────────────
+(function init() {
+  document.getElementById('date-label').textContent = ToolHelpers.formatDateBadge();
+  render();
+})();
+</script>
+<script>ToolHelpers.pinHeader();</script>
+</body>
+</html>
