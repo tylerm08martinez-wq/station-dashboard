@@ -3037,7 +3037,12 @@
     function renderHistoryTrkRow(trk) {
       return '<div class="history-trk">' +
         '<span class="history-trk-num">' + esc(trk) + '</span>' +
-        '<a class="history-ftrack" href="' + esc(ftrackUrl(trk)) + '" target="_blank" rel="noopener">FTrack ↗</a>' +
+        // Built through the shared lib, NOT hand-assembled: ftrackUrl returns ''
+        // for a blank tracking number, and interpolating that straight into an
+        // href yields href="" — a link that RELOADS the tool and drops the
+        // in-memory session (handled marks, dismissed groups). ftrackLink
+        // renders nothing at all when there is no tracking number.
+        ftrackLink(trk, 'history-ftrack') +
         '<button type="button" class="lane-btn ghost history-copy1" data-action="history-copy-one" data-trk="' + esc(trk) + '">Copy</button>' +
       '</div>';
     }
