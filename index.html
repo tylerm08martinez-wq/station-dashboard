@@ -394,15 +394,35 @@
       '<div class="tile-link">Build →</div></a>';
   }
 
-  // The IBNO Coder runs as its own hosted build (github.io/ibno-tool) so it
-  // auto-updates and isn't subject to the stale local-folder copy. The dashboard
-  // tile points there. Note: the live "to code" count below only appears when an
-  // Relative link to the IBNO Coder sibling file, so the dashboard and the tool
-  // open from the SAME local folder (file://) on each device — the back button in
-  // the tool returns here, and the IBNO session in this page's storage matches the
-  // tool's. (A hosted https build can't reach a local dashboard, so we run local;
-  // Repeat History still syncs across devices via the tool's GitHub sync.)
-  const IBNO_URL = 'ibno-coder.html';
+  // Relative link to the IBNO Coder sibling file, so that when the dashboard is
+  // opened LOCALLY (file://) the dashboard and the tool come from the same
+  // folder: the back button in the tool returns here, and the IBNO session in
+  // this page's storage is the same one the tool wrote.
+  //
+  // On the HOSTED build this exact line is rewritten to the public
+  // github.io/ibno-tool URL by scripts/deploy-dashboard.sh, because the hosted
+  // bundle deliberately ships no copy of the IBNO Coder (it has its own hosted
+  // build, and its own deploy). Two consequences worth knowing before editing
+  // this line:
+  //
+  //   1. The deploy script matches this statement's TEXT. Changing its shape
+  //      (renaming the constant, switching quote style, inlining the string)
+  //      breaks the rewrite. That has already happened once: the script only
+  //      matched the literal href-attribute form, this tile was refactored to
+  //      build its href from the constant below, and the hosted dashboard
+  //      silently shipped a link that 404'd. The script now GUARDS against a
+  //      missed rewrite instead of trusting it, and fails the deploy loudly.
+  //
+  //      Do not write the tool's bare filename into prose in this file. The
+  //      guard greps the built page for it, so a mention in a comment either
+  //      trips the guard or gets silently rewritten into a URL mid-sentence.
+  //      (Both happened while writing this note.)
+  //   2. Repeat History still syncs across devices via the tool's own GitHub
+  //      sync, so the local and hosted copies are not isolated from each other.
+  //
+  // A prior version of this comment claimed the tile already pointed at the
+  // hosted build. It did not; that was the bug.
+  const IBNO_URL = 'https://tylerm08martinez-wq.github.io/ibno-tool/';
 
   function ibnoTile(ibno) {
     // Live count when a session is loaded; otherwise a plain launcher (#159).

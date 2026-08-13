@@ -111,7 +111,7 @@
     #parse-status.err { color: #dc2626; }
     #file-input { display: none; }
 
-    #loader-toggle { margin-bottom: 16px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 
     /* ── No-schedule empty state ────────────────────────────────────────────── */
     #empty-state {
@@ -213,6 +213,7 @@
     .area-ME    { background: #b45309; }
     .area-DMG   { background: #dc2626; }
     .area-CDMG  { background: #9333ea; }
+    .area-FLOAT { background: #047857; }
     .area-other { background: #6b7280; }
     .off-cell   { color: var(--text-fainter); font-weight: 600; }
 
@@ -333,7 +334,10 @@
   <span id="today-label"></span>
 </header>
 
-<button class="btn btn-gray" id="loader-toggle" onclick="toggleLoader()">&#128203; Load / Update Schedule</button>
+<div class="toolbar">
+  <button class="btn btn-gray" id="loader-toggle" onclick="toggleLoader()">&#128203; Load / Update Schedule</button>
+  <button class="btn btn-gray" id="download-btn" onclick="exportScheduleImage()" style="display:none">&#128247; Download Schedule Image</button>
+</div>
 
 <div id="loader" style="display:none">
   <div class="panel-body">
@@ -391,6 +395,15 @@
   <div class="table-wrap"><table id="area-table"></table></div>
 </div>
 
+<!-- MODIFIED HELPERS -->
+<div class="section" id="helpers-section" style="display:none">
+  <div class="section-header">
+    <h2>Modified Helpers</h2>
+    <span class="meta" id="helpers-meta"></span>
+  </div>
+  <div class="table-wrap"><table id="helpers-table"></table></div>
+</div>
+
 <!-- SHIFT TIMES -->
 <div class="section" id="shift-section" style="display:none">
   <div class="section-header">
@@ -424,6 +437,7 @@
 <script src="lib/schedule-coverage.js"></script>
 <script src="lib/schedule-principles.js"></script>
 <script src="lib/schedule-data.js"></script>
+<script src="lib/schedule-export.js"></script>
 <script src="lib/table-sort.js"></script>
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
@@ -439,6 +453,7 @@ const AREA_LEGEND = {
   'ME':    { cls: 'area-ME',   name: 'Middle Earth', desc: 'Address updates, intercepts, relabels, repacks, overgoods, chute flow, 300/400 rollers, 3399 audits' },
   'DMG':   { cls: 'area-DMG',  name: 'Damages',     desc: 'Primary damage processing' },
   'C/DMG': { cls: 'area-CDMG', name: 'Combo C + Damages', desc: 'Area C duties combined with damage processing' },
+  'FLOAT': { cls: 'area-FLOAT', name: 'Floater',    desc: 'Belts, break relief, C backstop, absorbs the first callout (Principle 19)' },
   '—':     { cls: '',          name: 'Off',         desc: 'Not scheduled' },
 };
 
@@ -456,19 +471,30 @@ const todayIndex = ToolHelpers.todayIndex;
 // ─── RENDER ─────────────────────────────────────────────────────────────────────
 const esc = ToolHelpers.escapeHtml;
 
+// Last rendered parsed schedule — read by exportScheduleImage() so the download
+// reflects exactly what's on screen. Set on every render.
+let __currentData = null;
+
 function renderSchedule(data) {
-  const hasAny = data.areas.length || data.shifts.length || data.counts.length;
+  const helpers = data.helpers || []; // pre-#546 stores parsed without a helpers key
+  const hasAny = data.areas.length || data.shifts.length || data.counts.length || helpers.length;
   const tIdx = todayIndex();
+  __currentData = data;
 
   document.getElementById('empty-state').style.display = hasAny ? 'none' : 'block';
+  // The download button only makes sense once there's an assignment grid to export.
+  const dl = document.getElementById('download-btn');
+  if (dl) dl.style.display = data.areas.length ? 'inline-flex' : 'none';
 
   renderCoverage(data, tIdx);
   renderAreaTable(data.areas, tIdx);
+  renderHelpersTable(helpers, tIdx);
   renderShiftTable(data.shifts, tIdx);
   renderCountsTable(data.counts, tIdx);
   renderLegend(data.areas, hasAny);
 
   document.getElementById('area-section').style.display   = data.areas.length  ? 'block' : 'none';
+  document.getElementById('helpers-section').style.display = helpers.length    ? 'block' : 'none';
   document.getElementById('shift-section').style.display  = data.shifts.length ? 'block' : 'none';
   document.getElementById('counts-section').style.display = data.counts.length ? 'block' : 'none';
   document.getElementById('legend').style.display         = (data.areas.length || data.shifts.length) ? 'block' : 'none';
@@ -485,7 +511,7 @@ function renderSchedule(data) {
 let __schedSortWired = false;
 function wireHeaderSort() {
   if (typeof TableSort === 'undefined') return;
-  ['area-table', 'shift-table', 'counts-table'].forEach(function (id) {
+  ['area-table', 'helpers-table', 'shift-table', 'counts-table'].forEach(function (id) {
     const table = document.getElementById(id);
     if (!table || table._sortWired) return;
     // col0 -> first cell; dN -> the (N+1)th cell (day columns after the label).
@@ -626,6 +652,25 @@ function renderAreaTable(rows, tIdx) {
   table.innerHTML = html + '</tbody>';
 }
 
+// Modified Helpers grid (#546) — same day-cell rendering as the QA grid, but a
+// separate table fed by parsed.helpers: helpers hold fixed area seats
+// (Principle 15) yet are NOT QA area bodies, so they stay out of the Area
+// Assignments rows, the coverage analysis, and the QA counts.
+function renderHelpersTable(rows, tIdx) {
+  const table = document.getElementById('helpers-table');
+  document.getElementById('helpers-meta').textContent = rows.length + ' helper' + (rows.length === 1 ? '' : 's') + ' — fixed area seats, not counted as QA';
+  let html = headerRow('Helper', tIdx) + '<tbody>';
+  rows.forEach(r => {
+    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
+    r.cells.forEach((c, i) => {
+      const cls = (i === tIdx ? 'today' : '');
+      html += '<td class="' + cls + '">' + areaCellHtml(c) + '</td>';
+    });
+    html += '</tr>';
+  });
+  table.innerHTML = html + '</tbody>';
+}
+
 function areaCellHtml(code) {
   if (isOff(code)) return '<span class="off-cell">&mdash;</span>';
   const norm = normalizeCode(code);
@@ -715,6 +760,7 @@ function loadFromText(raw, persist) {
   }
   const parts = [];
   if (data.areas.length)  parts.push(data.areas.length + ' assignment rows');
+  if ((data.helpers || []).length) parts.push(data.helpers.length + ' helper rows');
   if (data.shifts.length) parts.push(data.shifts.length + ' shift rows');
   if (data.counts.length) parts.push(data.counts.length + ' count rows');
   setStatus('✓ Loaded ' + parts.join(', '), true);
@@ -757,6 +803,78 @@ function clearSchedule() {
 function toggleLoader() {
   const el = document.getElementById('loader');
   el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+
+// ─── DOWNLOAD IMAGE ─────────────────────────────────────────────────────────────
+// Renders JUST the Area Assignments + Modified Helpers grids to a clean, light-
+// themed PNG for pasting into email/messages or printing. Logic (the SVG) lives
+// in lib/schedule-export.js; here we only feed it the on-screen data and
+// rasterise the returned SVG through a <canvas>. Colors come from the tool's own
+// areaClass() so the image matches the pills exactly (single source).
+function schedExportColorFor(code) {
+  if (isOff(code)) return null;
+  const C = ScheduleExport.DEFAULT_COLORS;
+  return C[areaClass(code)] || C['area-other'];
+}
+
+function exportScheduleImage() {
+  if (typeof ScheduleExport === 'undefined') return;
+  const data = __currentData;
+  if (!data || !data.areas || !data.areas.length) {
+    setStatus('Load a schedule first', false);
+    return;
+  }
+  const sections = [{ label: 'Area Assignments', nameHeader: 'Employee', rows: data.areas }];
+  const helpers = data.helpers || [];
+  if (helpers.length) sections.push({ label: 'Modified Helpers', nameHeader: 'Helper', rows: helpers });
+
+  // 3x pixel density: the builder emits an SVG whose width/height are the target
+  // pixel size (viewBox stays logical), so the browser rasterises the vector at
+  // full resolution. We then paint it 1:1 onto a same-size canvas — no upscaling
+  // of a low-res bitmap, so text and pills stay crisp for print/paste.
+  const out = ScheduleExport.buildScheduleSVG({
+    title: 'QA Schedule',
+    subtitle: 'Station 849 / NPHO',
+    days: data.days || DAYS,
+    sections: sections,
+    colorFor: schedExportColorFor,
+    isOff: isOff,
+    scale: 3,
+  });
+
+  const svgBlob = new Blob([out.svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  img.onload = function () {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = out.width;
+      canvas.height = out.height;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(img, 0, 0, out.width, out.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(function (blob) {
+        if (!blob) { setStatus('Could not create image', false); return; }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'qa-schedule.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        setStatus('✓ Schedule image downloaded', true);
+      }, 'image/png');
+    } catch (e) {
+      URL.revokeObjectURL(url);
+      setStatus('Could not render image', false);
+    }
+  };
+  img.onerror = function () { URL.revokeObjectURL(url); setStatus('Could not render image', false); };
+  img.src = url;
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
