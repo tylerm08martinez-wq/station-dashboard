@@ -228,6 +228,39 @@ html[data-theme="dark"] .theme-toggle {
   border-color: #3a3b4a;
 }
 
+/* ── Time-Off: the FLAGGED attendance row ─────────────────────────────────────
+ * time-off-log.html tints a flagged admin's row with a light red wash
+ * (#fef6f6 / #f6caca). That tint had no dark counterpart while every text
+ * colour inside it DOES follow the theme, so on a dark page it rendered
+ * near-white type on a near-white card:
+ *
+ *     admin name    1.16:1     rolling counts   1.82:1     (AA wants 4.5:1)
+ *     unflagged row 12.48:1                     7.93:1     — fine, which is
+ *       what identifies this as the tint failing to switch, not the text
+ *
+ * Unreadable on precisely the rows naming an admin approaching a documented
+ * conversation — the highest-stakes text in the tool. It had never been seen
+ * because dark mode did not work at all on the hosted build (the body stayed
+ * light), so this tint had never met a dark page; repairing that deploy is
+ * what made it reachable. Measured in real Chrome, both themes, 2026-08-21,
+ * and re-measured after: 13.75:1 and 8.73:1.
+ *
+ * Lives HERE rather than inline in the tool for the two reasons this file
+ * exists: theme.css loads last, so a dark value put inline can silently lose
+ * to a generic selector here; and tests/theme-contrast-dom.test.js budgets
+ * hardcoded hex in the tools precisely to keep dark values from accumulating
+ * there. The selectors are used by time-off-log.html alone (verified by grep
+ * across every tool and lib), so nothing else can pick these up.
+ *
+ * Not tokenized, matching this file's stated rule: red here is a STATUS
+ * colour, and the palette above deliberately leaves status colours alone.
+ */
+html[data-theme="dark"] .watch-row.flagged {
+  background: #2b1719;
+  border-color: #7f3336;
+}
+html[data-theme="dark"] .watch-flag { color: #fca5a5; }
+
 /* Screen-only chrome: the fixed toggle otherwise prints as a gray box in the
    corner of every tool's printout. */
 @media print {
