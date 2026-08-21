@@ -97,21 +97,12 @@ html[data-theme="dark"] .filter-bar {
   border-color: #2e2f3c;
 }
 
-/* Express sections (IBNO Coder). The tool styles these with `.section.express`,
-   which OUTRANKS the generic dark .section-header rule above, so the light blue
-   would leak into dark mode unless answered here at higher specificity.
-   These are SELECTOR-COUPLED to the tool's markup and that has already bitten
-   twice: once when an unscoped `.lane-head` rule here painted a grey band behind
-   Address Catcher's unrelated .lane-head, and once when the single
-   #express-section was split into #express-auto-section / #express-manual-section
-   and these rules kept targeting the dead id, leaving both headers light in dark
-   mode. Re-check this block whenever the express markup is renamed. */
-html[data-theme="dark"] .section.express { border-color: #2f5c9e; }
-html[data-theme="dark"] .section.express > .section-header {
-  background: #18233a;
-  border-bottom-color: #2f5c9e;
-}
-html[data-theme="dark"] .section.express > .section-header h2 { color: #93c5fd; }
+/* Express identity (IBNO Coder). #696 merged the express SECTIONS away, so the
+   `.section.express` rules that styled them are gone with them — a dark rule
+   pointing at a dead id is exactly how both express headers once shipped light
+   on a dark page. What survives is the Service pill, which is markup that is
+   still rendered on every Ready to Enter row. Re-check this block whenever the
+   express markup is renamed. */
 html[data-theme="dark"] .express-yes { background: #1b2a47; color: #93c5fd; }
 html[data-theme="dark"] .express-no  { background: #23242f; color: #8b8b93; }
 

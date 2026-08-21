@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NVS Builder — Station 849</title>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      /* Local to this tool — the red "PULL" accent used for in-ticket misload
+         line-items. Scoped here (not theme.css) the same way dashboard.html
+         scopes its own --crit; overridden for dark below. */
+      --nvs-pull: #b3261e;
+      --nvs-pull-bg: #fdeceb;
+      --nvs-pull-border: #e3b3ae;
+    }
+    html[data-theme="dark"] {
+      --nvs-pull: #ff8a80;
+      --nvs-pull-bg: #3a1f1e;
+      --nvs-pull-border: #6b332f;
+    }
+
+    body {
+      margin: 0;
+      font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background: var(--app-bg);
+    }
+
+    /* ── Controls (hidden on print) ─────────────────────────────────────── */
+    .controls {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 12px 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .controls h1 {
+      font-size: 17px;
+      margin: 0 8px 0 0;
+      letter-spacing: 0.02em;
+    }
+    .controls label { font-size: 13px; color: var(--text-muted); }
+    .controls input[type="file"] { font: inherit; font-size: 13px; }
+    .controls input[type="number"] {
+      width: 64px;
+      font: inherit;
+      padding: 5px 7px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--field-bg);
+      color: var(--text);
+    }
+    .controls .spacer { flex: 1; }
+    .controls .meta { font-size: 12px; color: var(--text-muted); }
+    .btn {
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--field-bg);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .btn.primary { background: var(--brand, #4D148C); color: #ffffff; border-color: transparent; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Empty / status states ──────────────────────────────────────────── */
+    .state {
+      max-width: 640px;
+      margin: 64px auto;
+      text-align: center;
+      color: var(--text-faint);
+      font-size: 15px;
+    }
+    .state.hidden { display: none; }
+
+    /* ── Settings panel (#514): flagged work-area exclusion list, the same
+       textarea setting as the IBNO Coder's. Screen-only chrome (the print
+       block below hides it even while open). */
+    .settings-panel {
+      display: none;
+      max-width: 520px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-panel.open { display: block; }
+    .settings-panel label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .settings-panel .hint { font-size: 11px; color: var(--text-faint); margin-bottom: 10px; }
+    #flagged-areas-input {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      padding: 8px 10px;
+      resize: vertical;
+      min-height: 72px;
+      color: var(--text);
+      background: var(--field-bg);
+    }
+    #flagged-areas-input:focus { outline: none; border-color: #4D148C; }
+    .settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .settings-status {
+      font-size: 12px;
+      color: #16a34a;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .settings-status.show { opacity: 1; }
+
+    /* ── Sheets: one per belt ──────────────────────────────────────────── */
+    .sheets { max-width: 8.5in; margin: 0 auto; padding: 22px 12px 60px; }
+    .belt {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin: 0 auto 22px;
+      padding: 0.4in;
+    }
+    .belt-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      border-bottom: 3px solid var(--text);
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+    }
+    .belt-head h2 { font-size: 28px; margin: 0; letter-spacing: 0.02em; font-weight: 900; }
+    .belt-head .sub { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+    /* ── Per-belt print toggle (screen-only chrome, like .controls) ───────
+       Tyler's #443 feedback: select WHICH belts print. Selection is
+       view-state only — never persisted to localStorage/sync; a fresh
+       report drop resets to all-selected. Zero effect on worklist logic. */
+    .belt-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .belt-select input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--brand, #4D148C);
+    }
+    .belt.print-excluded { opacity: 0.45; }
+    .belt.print-excluded .belt-select { opacity: 1; } /* keep the way back obvious */
+    .belt.print-excluded .belt-pair { opacity: 1; }
+
+    /* Belt-pair control (#513): one checkbox per belt NUMBER, riding the
+       pair's first sheet (ODD sorts first), selects/deselects both sides at
+       once — staffing a belt is one click instead of hunting two toggles.
+       The sides keep their own .belt-select toggles and copy counts. Same
+       screen-only view-state rule as .belt-select: never persisted, a fresh
+       render resets to all-selected. */
+    .belt-pair {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .belt-pair input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--brand, #4D148C);
+    }
+
+    /* ── Per-belt copy count (#512): the TOOL owns copies, not the browser
+       dialog. Browser-dialog copies reprint the whole job N times, so copy 2
+       opens on the back of copy 1's last page (400 ODD lands on the back of
+       500 EVEN). Instead each copy is a cloned .belt-copy instance laid out
+       in one job, so the .pad-duplex filler machinery aligns EVERY instance
+       to a front side — across copy boundaries — and .print-last suppresses
+       the filler only at the very end. View-state only, like the print
+       toggle: a fresh render resets every belt to 1 copy. */
+    .belt-copies {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .belt-copies input { width: 3em; font: inherit; }
+    /* Copy clones are print-only instances: hidden on screen (the primary's
+       copies input drives them), shown by the print-media rule below. They
+       inherit the primary's zoom/pad-duplex state via cloneNode, so
+       updatePageEstimates never measures them. */
+    .belt-copy { display: none; }
+
+    /* Page-count estimate badge (screen-only, #443 feedback): "~1 page" /
+       "~2 pages" per belt so Tyler knows BEFORE printing whether a belt
+       spills to front/back. An estimate from rendered height normalized to
+       a US-Letter printable area — print preview stays the ground truth. */
+    .page-est {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      border: 1px solid var(--border-soft, #ccc);
+      border-radius: 10px;
+      padding: 1px 8px;
+      white-space: nowrap;
+    }
+    .page-est.multi { color: #b45309; border-color: #b45309; }
+
+    /* ── Ticket Wall: 3-across grid of area "tickets" (issue #441) ───────
+       Each area is a bordered, dashed-cut-line ticket: a giant gate-style
+       area number, find-&-load chips (checkbox + big SORT_SID + "in at
+       H:MM AM"; no city, no weight), and — when the area has misloads — a
+       slim red PULL line-item list inside the SAME ticket (not a separate
+       section). Density tier (.density-large/-compact, computed per belt by
+       lib/nvs-worklist.js#densityTier) scales the whole grid up for light
+       belts so a small belt doesn't print mostly blank. */
+    .tickets {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      /* 2-page cap (7/15 round): with mixed-width tickets, fill holes left by
+         span wrapping so the wall stays dense. May place a small later area
+         into an earlier gap — acceptable: handlers find their area by the
+         giant gate number, not by wall position. */
+      grid-auto-flow: dense;
+    }
+    /* Ticket width tier (lib/nvs-worklist.js#ticketLayout): chip-heavy areas
+       widen instead of growing tall, so chip size stays constant. */
+    .ticket.span-2 { grid-column: span 2; }
+    .ticket.span-3 { grid-column: 1 / -1; }
+    .chip-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+    .chip-grid.cols-7 { grid-template-columns: repeat(7, 1fr); }
+    /* COMPACT full-width tickets: FIXED column count. A fixed count keeps row
+       math identical on screen, in print, and under print zoom (auto-fill
+       repacks when zoom reflows the width, which made the shrink estimate
+       nonlinear and wrong in both directions).
+       7 across, widened from 8 on 2026-07-31: at 8 across a 12-digit tracking
+       number could not exceed 7px without overflowing its chip, and 6px was
+       too small to read on the printed sheet (Tyler). 7 across buys 8.5px,
+       measured as the largest that still fits with zero overflow at peak load.
+       Costs ~2 pages across a full drop's compact belts (26 -> 28 at 07:00 on
+       the 7/31 report). Still comfortably wider than a 6-char SID at 16px/900.
+       If this count changes again, re-derive the stretch ladder below AND
+       re-measure the tracking size; the two are coupled. */
+    .chip-grid.cols-auto { grid-template-columns: repeat(7, 1fr); }
+    /* Stretched-belt column overrides (fill-both-sheets, 7/15 round 4):
+       print zoom above 1 narrows the own-px layout, so JS drops the column
+       count to keep chips at least default-width. Belt-level class so one
+       stamp re-columns every ticket in the belt. */
+    .belt.cols-7 .chip-grid.cols-auto { grid-template-columns: repeat(7, 1fr); }
+    .belt.cols-6 .chip-grid.cols-auto { grid-template-columns: repeat(6, 1fr); }
+    .belt.cols-5 .chip-grid.cols-auto { grid-template-columns: repeat(5, 1fr); }
+    .belt.cols-4 .chip-grid.cols-auto { grid-template-columns: repeat(4, 1fr); }
+    /* The large tier's wall is only 2 columns wide — a span-2/3 ticket there
+       is simply full-width (span 3 would mint a phantom implicit column). */
+    .density-large .ticket.span-2, .density-large .ticket.span-3 { grid-column: 1 / -1; }
+    .ticket {
+      border: 2px dashed var(--text);
+      border-radius: 4px;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      background: var(--surface);
+    }
+    .ticket-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--text);
+      color: var(--surface);
+      padding: 4px 8px;
+    }
+    .ticket-head .gate-num { font-size: 26px; font-weight: 900; line-height: 1; }
+    .ticket-head .gate-meta { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+
+    .chip-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      /* A wide mis-tag must wrap inside its cell, not widen the whole
+         column (1fr respects min-content unless we zero it). */
+      min-width: 0;
+      gap: 4px;
+      padding: 5px;
+    }
+    .chip-empty {
+      grid-column: 1 / -1;
+      font-size: 10px;
+      color: var(--text-faint);
+      padding: 6px;
+      text-align: center;
+    }
+    .chip {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      border: 1.5px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 3px 2px 4px;
+      text-align: center;
+      position: relative;
+    }
+    .chip-top { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .chip .chip-check {
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--text);
+      border-radius: 2px;
+      flex: none;
+    }
+    /* nowrap: an FL-suffixed SID is 6 chars ("2037FL") and used to break
+       mid-token, printing "2037F" over "L". A handler scanning the belt for a
+       number reads a wrapped SID as the wrong SID. 27% of the 7/31 report's
+       SIDs are FL-suffixed, and the COMPACT tier's 8-across grid is the
+       tightest column they sit in, so this is where it showed. No SID in the
+       report is longer than 6 chars, so refusing to break can't overflow. */
+    .chip .chip-sid { font-size: 16px; font-weight: 900; line-height: 1; color: var(--text); white-space: nowrap; }
+    .chip .chip-time { font-size: 8px; color: var(--text-muted); margin-top: 2px; }
+    .chip .chip-time.unknown { font-style: italic; }
+    /* Confirm-the-package line (Tyler, #443 round): the FULL tracking number
+       (PKG_LABEL_XREF, 11-12 digits in real exports — fits every tier without
+       truncation), tiny and muted, clearly secondary to the SID. */
+    .chip .chip-trk { font-size: 7px; color: var(--text-faint); margin-top: 1px; letter-spacing: 0.02em; }
+    /* issue 517: the tracking number itself is the FTrack link on screen — inherits
+       the chip's own type so it never grows the chip or the page estimate. */
+    .chip .chip-trk-link { color: inherit; font: inherit; letter-spacing: inherit; text-decoration: underline; text-underline-offset: 1px; text-decoration-style: dotted; }
+    .chip .chip-trk-link:hover { color: var(--text); text-decoration-style: solid; }
+    .chip .chip-flag {
+      display: block;
+      font-size: 6.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      padding: 0 3px;
+      margin-top: 2px;
+    }
+
+    /* ── Misload CHIPS (Tyler, 7/15 round 3; supersedes the #441 weighted
+       rows) — misloads sit IN the chip grid at full chip size so they can't
+       be missed. Actor chip = the pull (solid heavy red border, checkbox);
+       home chip = awareness (dashed, lighter, no checkbox). B&W print keeps
+       the weighting via border weight + solid-vs-dashed. */
+    .chip.mis { border: 2.5px solid var(--nvs-pull); background: var(--nvs-pull-bg); }
+    .chip.mis.home { border-style: dashed; border-color: var(--nvs-pull-border); background: var(--surface); }
+    .mis-tag {
+      font-size: 8.5px;
+      font-weight: 900;
+      color: var(--nvs-pull);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-top: 1px;
+    }
+    /* PRECAUTIONARY, not a fix for an observed bug. .mis-dest is the area a
+       misloaded package was wrongly scanned to, so a numeral split across two
+       lines would be read as a different area and the package would go to the
+       wrong truck. .chip sets overflow-wrap: anywhere for long addresses, so
+       nothing else stops that break. Honest caveat: this was NOT reproducible.
+       Stripping the declaration and re-rendering in Chrome (both media, and a
+       stress case with a 7-digit destination in the tightest compact column)
+       produced zero wraps, because real areas are 3 digits and the tag has
+       room. Kept as cheap insurance given the failure mode, not because it
+       demonstrably changes today's output. */
+    .mis-tag .mis-dest { font-size: 13px; white-space: nowrap; }
+    .mis-tag.unparsed { text-transform: none; font-style: italic; }
+
+    /* ── Density tier: LARGE ──────────────────────────────────────────────
+       Light belts (<=4 areas AND <=12 pkg — most of the fleet, see
+       lib/nvs-worklist.js#densityTier) scale UP so the sheet isn't mostly
+       white space: fewer, bigger tickets per row and bigger chips. */
+    .density-large .tickets { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .density-large .ticket-head .gate-num { font-size: 46px; }
+    .density-large .ticket-head .gate-meta { font-size: 11px; }
+    .density-large .chip-grid { gap: 8px; padding: 10px; }
+    .density-large .chip { padding: 8px 4px 9px; }
+    .density-large .chip .chip-check { width: 18px; height: 18px; }
+    .density-large .chip .chip-sid { font-size: 30px; }
+    .density-large .chip .chip-time { font-size: 12px; margin-top: 4px; }
+    .density-large .chip .chip-trk { font-size: 10px; margin-top: 2px; }
+    .density-large .chip .chip-flag { font-size: 9px; margin-top: 4px; }
+    .density-large .mis-tag { font-size: 12px; }
+    .density-large .mis-tag .mis-dest { font-size: 19px; }
+
+    /* The base .tickets/.ticket/.chip rules above are the prototyped Ticket
+       Wall sizing. They no longer render on their own: the STANDARD tier that
+       used them was retired 2026-07-31, so every belt is LARGE or COMPACT and
+       both override from here. Kept as the shared baseline both tiers build
+       on, not as a tier of its own. */
+
+    /* ── Density tier: COMPACT ─────────────────────────────────────────────
+       Every belt past the light-belt caps (>8 areas OR >12 pkg). Tightest
+       sizing, validated against the prototype's 12-area/36-pkg stress case
+       fitting one printed page. */
+    .density-compact .tickets { gap: 6px; }
+    /* WA left rail (7/15 print round 3): on a dense belt a handler looks
+       away to grab a package and needs to re-find their Work Area fast.
+       The WA number becomes a giant numeral in a fixed-width rail running
+       the full height of its band — every WA sits on one vertical scan
+       line at the left paper edge. Type + position, not background, so it
+       survives any B&W print driver. */
+    .density-compact .ticket {
+      display: grid;
+      grid-template-columns: 76px 1fr;
+    }
+    .density-compact .ticket-head {
+      grid-row: 1 / span 2;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 2px;
+      padding: 6px 4px;
+      text-align: center;
+    }
+    .density-compact .chip-grid { grid-column: 2; }
+    .density-compact .ticket-head .gate-num { font-size: 30px; letter-spacing: -0.02em; }
+    .density-compact .ticket-head .gate-meta { font-size: 7px; }
+    .density-compact .chip-grid { gap: 2px; padding: 3px; }
+    .density-compact .chip { padding: 1px 2px 2px; }
+    /* Print round 2 (7/15): SID is the thing a handler reads at arm's
+       length. Checkbox sits BESIDE it (a stacked checkbox spent a whole
+       row of height), SID grows 13 -> 16px, and the who-cares metadata
+       (time, tracking) shares one small line. */
+    .density-compact .chip-top { flex-direction: row; justify-content: center; gap: 4px; }
+    .density-compact .chip .chip-check { width: 13px; height: 13px; }
+    .density-compact .chip .chip-sid { font-size: 16px; }
+    /* Two TIGHT block lines. Inlining time+trk overflowed the 8-across
+       cell and wrapped into 3 line boxes (81px chips, measured) — stacked
+       tight blocks are 2 predictable lines and half the height. */
+    .density-compact .chip .chip-time { font-size: 7px; line-height: 1.15; margin-top: 1px; white-space: nowrap; }
+    /* 8.5px, up from 6px (2026-07-31): Tyler could not read the tracking
+       number on a printed compact sheet. 8.5 is the ceiling, measured, not
+       chosen: at the 7-across grid a 12-digit number overflows its chip at 9px,
+       and letter-spacing must be 0 (the base rule's 0.02em costs enough width
+       to overflow on its own). Coupled to the column count above. */
+    .density-compact .chip .chip-trk { font-size: 8.5px; line-height: 1.15; margin-top: 1px; white-space: nowrap; letter-spacing: 0; }
+    /* Misload chips keep wrapping: their lines are longer and they are rare
+       enough that a taller chip beats clipped information. */
+    .density-compact .chip.mis .chip-time { white-space: normal; }
+    .density-compact .mis-tag { margin-top: 0; font-size: 8px; }
+    .density-compact .mis-tag .mis-dest { font-size: 12px; }
+    .density-compact .chip .chip-flag { font-size: 5.5px; }
+
+    /* ── Print: page-break per belt, hide controls, black-on-white ──────── */
+    @media print {
+      body { background: white; color: black; }
+      .controls, .state, .settings-panel { display: none !important; }
+      .sheets { max-width: none; margin: 0; padding: 0; }
+      .belt {
+        background: white;
+        color: black;
+        border: none;
+        border-radius: 0;
+        margin: 0;
+        padding: 0.35in;
+        page-break-after: always;
+        /* 2-page cap: JS (updatePageEstimates) sets --print-zoom below 1 on
+           any belt estimated past 2 pages. zoom (not transform) because it
+           participates in layout, so pagination sees the shrunk size. */
+        zoom: var(--print-zoom, 1);
+      }
+      /* The LAST PRINTED belt must not force a trailing blank page. :last-child
+         is wrong once print selection exists (the DOM-last belt may be
+         excluded, leaving the real last-printed belt with a forced break —
+         Tyler hit this as a blank 5/5 page in preview). JS stamps .print-last
+         on the last non-excluded belt on every selection change/render. */
+      .belt.print-last { page-break-after: auto; }
+      /* Duplex correctness (7/15 round): every belt must START on a front
+         side, or a 1-page belt mid-run puts the next belt on the back of
+         someone else's sheet. Chromium ignores page-break-before:right, so
+         JS stamps .pad-duplex on odd-page belts (updatePageEstimates) and
+         this emits one blank filler page after each — every belt then spans
+         an even page count and the next always opens on a front. The last
+         printed belt needs no filler. */
+      .belt.pad-duplex::after { content: ""; display: block; page-break-before: always; }
+      .belt.print-last.pad-duplex::after { content: none; }
+      /* Belt print selection (#443 feedback): unselected belts are fully
+         excluded from the print output — no blank pages. display:none also
+         removes their page-break, so breaks stay correct between the belts
+         that DO print. The toggle itself is screen-only chrome. */
+      .belt.print-excluded { display: none !important; }
+      .belt-select { display: none !important; }
+      .belt-pair { display: none !important; }
+      .belt-copies { display: none !important; }
+      /* #512: copy clones print as full instances (the screen rule above
+         hides them). Equal specificity to .belt-copy, later in the sheet,
+         so it wins in print; .print-excluded's !important still wins over
+         it, so an excluded belt's copies never print. */
+      .belt-copy { display: block; }
+      .page-est { display: none !important; }
+      .belt-head { border-bottom-color: black; }
+      .belt-head h2 { color: black; }
+      .ticket { border-color: black; }
+      /* B&W-printer robustness: most print drivers ship with "background
+         graphics" OFF, which strips the black band and leaves the white gate
+         number invisible (white-on-white). Never depend on a background in
+         print — black text on white with a heavy rule reads on any printer
+         and saves toner on B&W lasers. */
+      .ticket-head { background: white; color: black; border-bottom: 3px solid black; }
+      /* Compact WA rail: the divider is the rail's right edge, not a bottom
+         rule; bands separate with a solid heavy border (dashed cut-lines are
+         ticket chrome; these are manifest rows). */
+      .density-compact .ticket-head { border-bottom: none; border-right: 3px solid black; }
+      .density-compact .ticket { border-style: solid; border-width: 2px; }
+      .chip { border-color: #666666; }
+      .chip .chip-check { border-color: black; }
+      .chip .chip-sid, .chip .chip-time, .chip .chip-flag, .chip .chip-trk { color: black; }
+      /* Paper can't click (issue 517): the tracking link prints as the plain
+         black number it has always been — no underline, no link color. */
+      .chip .chip-trk-link { color: black; text-decoration: none; }
+      .chip .chip-flag { border-color: black; }
+      /* Black-on-white print: the actor/home weighting survives via border
+         weight and solid-vs-dashed (color is screen-only). */
+      .chip.mis { border-color: black; background: white; }
+      .chip.mis.home { border-color: #666666; }
+      .mis-tag, .mis-tag .mis-dest { color: black; }
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <h1>NVS Builder</h1>
+    <label for="nvs-file">No Van Scan report (CSV or Excel)</label>
+    <input type="file" id="nvs-file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    <label for="threshold">Overdue &ge;</label>
+    <input type="number" id="threshold" value="45" min="0" step="5" aria-label="Overdue threshold in minutes">
+    <span class="meta">min</span>
+    <span class="spacer"></span>
+    <span class="meta" id="meta"></span>
+    <span class="meta">Print belts:</span>
+    <button type="button" class="btn" id="select-all-btn" disabled>All</button>
+    <button type="button" class="btn" id="select-none-btn" disabled>None</button>
+    <button type="button" class="btn primary" id="print-btn" disabled
+      title="Copies are built into the job — leave the browser print dialog at 1 copy">Print</button>
+    <button type="button" class="btn" id="settings-btn"
+      title="Flagged work areas excluded from the belt sheets">Settings</button>
+  </div>
+
+  <!-- Flagged work-area exclusion (#514): same textarea setting as the IBNO
+       Coder's, persisted the same way. Screen-only chrome. -->
+  <div class="settings-panel" id="settings-panel">
+    <label for="flagged-areas-input">Flagged Work Areas</label>
+    <div class="hint">One per line or comma-separated. Packages in these areas never appear on the belt sheets — hold/closure lanes the belt handlers can&#39;t act on. Defaults to the IBNO Coder&#39;s list + 9925.</div>
+    <textarea id="flagged-areas-input" spellcheck="false"></textarea>
+    <div class="settings-actions">
+      <button type="button" class="btn primary" id="settings-save-btn">Save</button>
+      <button type="button" class="btn" id="settings-reset-btn">Reset to defaults</button>
+      <span class="settings-status" id="settings-status">&#10003; Saved</span>
+    </div>
+  </div>
+
+  <div class="state" id="empty-state">Drop the <strong>No Van Scan</strong> report above to build a per-belt checklist of the packages still not loaded.</div>
+  <div class="state hidden" id="nothing-state">Nothing overdue past the threshold. No packages to chase.</div>
+  <div class="sheets" id="sheets"></div>
+
+  <script src="lib/tool-helpers.js"></script>
+  <script src="lib/csv.js"></script>
+  <script src="lib/xlsx.js"></script>
+  <script src="lib/spreadsheet.js"></script>
+  <!-- lib/ftrack.js: the one shared FTrack deep-link builder (issue 517). The
+       on-screen chip tracking number links; print output stays plain. -->
+  <script src="lib/ftrack.js"></script>
+  <script src="lib/nvs-report.js"></script>
+  <script src="lib/nvs-worklist.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var toolStorage = ToolHelpers.createStorage();
+
+    var state = { records: null, now: null, excludeAreas: loadExcludeAreas() };
+
+    // Flagged work-area exclusion list (#514): persisted exactly like the
+    // IBNO Coder's setting (a toolStorage JSON key), including its boot rule
+    // — only a saved NON-EMPTY array replaces the defaults. A saved empty
+    // list boots back to the defaults, same as the IBNO Coder's init guard
+    // (the two tools must read their setting identically).
+    function loadExcludeAreas() {
+      var saved = toolStorage.get('nvs_excluded_areas', null);
+      return Array.isArray(saved) && saved.length > 0
+        ? saved
+        : NvsWorklistLib.DEFAULT_EXCLUDED_WORK_AREAS.slice();
+    }
+
+    var els = {
+      file: document.getElementById('nvs-file'),
+      threshold: document.getElementById('threshold'),
+      print: document.getElementById('print-btn'),
+      selectAll: document.getElementById('select-all-btn'),
+      selectNone: document.getElementById('select-none-btn'),
+      meta: document.getElementById('meta'),
+      sheets: document.getElementById('sheets'),
+      empty: document.getElementById('empty-state'),
+      nothing: document.getElementById('nothing-state'),
+      settingsBtn: document.getElementById('settings-btn'),
+      settingsPanel: document.getElementById('settings-panel'),
+      areasInput: document.getElementById('flagged-areas-input'),
+      settingsSave: document.getElementById('settings-save-btn'),
+      settingsReset: document.getElementById('settings-reset-btn'),
+      settingsStatus: document.getElementById('settings-status'),
+    };
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+      });
+    }
+
+    // Live browser clock, unless a test pins it via window.__NVS_NOW (a Date).
+    function readNow() {
+      return (window.__NVS_NOW instanceof Date) ? window.__NVS_NOW : new Date();
+    }
+
+    function currentThreshold() {
+      var v = parseInt(els.threshold.value, 10);
+      return (isNaN(v) || v < 0) ? 45 : v;
+    }
+
+    // Locked design rule (Tyler's rulings, #441): NEVER show city, NEVER show
+    // weight — only the inbound clock time a handler can picture ("in at
+    // 3:50 AM"), with a leading zero dropped for readability.
+    function chipTimeText(pkg) {
+      if (pkg.unknownTime || !pkg.ibTime) return 'in-time unknown';
+      return 'in at ' + pkg.ibTime.replace(/^0(\d:)/, '$1');
+    }
+
+    // trkHtml(tracking) -> the chip's tracking number as a one-click FTrack
+    // lookup (issue 517). The NUMBER ITSELF is the link, deliberately with no
+    // added "FTrack" chip: these sheets are printed, and paper can't click, so
+    // the print rules below strip the link styling back to plain black text and
+    // the sheet reads exactly as it did before.
+    function trkHtml(tracking) {
+      return FTrack.ftrackLink(tracking, { className: 'chip-trk-link', text: tracking }) || esc(tracking);
+    }
+
+    function chipHtml(pkg) {
+      var known = !(pkg.unknownTime || !pkg.ibTime);
+      var flag = pkg.statusCodes ? '<div class="chip-flag">' + esc(pkg.statusCodes) + '</div>' : '';
+      return '<div class="chip">' +
+        '<div class="chip-top"><div class="chip-check"></div>' +
+        '<div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
+        '<div class="chip-time' + (known ? '' : ' unknown') + '">' + esc(chipTimeText(pkg)) + '</div>' +
+        (pkg.tracking ? '<div class="chip-trk">' + trkHtml(pkg.tracking) + '</div>' : '') +
+        flag +
+        '</div>';
+    }
+
+    // ── Misload CHIPS (Tyler's ruling, 7/15 print round 3, supersedes the
+    // #441 weighted-row verdict): misloads were slim rows under the chips and
+    // got missed on paper. They now render as FIRST-CLASS CHIPS in the same
+    // grid as no-scan chips — same size, same slots — with an unmissable
+    // MISLOAD tag and the area the package must GO to.
+    //   ACTOR chip (in the truck it was mis-scanned onto; owns the pull):
+    //     checkbox + SID + "MISLOAD -> 448" + handler/time + tracking.
+    //   HOME chip (in its own area; awareness only, package is not here):
+    //     no checkbox, dashed, "MISLOAD - went to 403".
+    // Unroutable misloads still render their home chip alone, raw detail
+    // verbatim (issue #419 - never hide a package over bad data).
+
+    function misMeta(handler, time) {
+      if (!handler && !time) return '';
+      var parts = [];
+      if (handler) parts.push(esc(handler));
+      if (time) parts.push(esc(time));
+      return '<div class="chip-time">' + parts.join(' &middot; ') + '</div>';
+    }
+
+    function actorChipHtml(item) {
+      var flag = item.statusCodes ? '<div class="chip-flag">' + esc(item.statusCodes) + '</div>' : '';
+      return '<div class="chip mis actor">' +
+        '<div class="chip-top"><div class="chip-check"></div>' +
+        '<div class="chip-sid">' + esc(item.sortSid) + '</div></div>' +
+        '<div class="mis-tag">Misload &rarr; <span class="mis-dest">' + esc(item.homeArea) + '</span></div>' +
+        misMeta(item.handler, item.time) +
+        (item.tracking ? '<div class="chip-trk">' + trkHtml(item.tracking) + '</div>' : '') +
+        flag + '</div>';
+    }
+
+    function homeChipHtml(pkg) {
+      var m = pkg.misload;
+      var flag = pkg.statusCodes ? '<div class="chip-flag">' + esc(pkg.statusCodes) + '</div>' : '';
+      // A missing scannedArea must not render a dangling arrow with an empty
+      // token — the raw ISSUE_TYPE remainder rides instead (code-review
+      // finding, carried over from the row era).
+      var tag = m.scannedArea
+        ? '<div class="mis-tag">Misload &middot; went to <span class="mis-dest">' + esc(m.scannedArea) + '</span></div>'
+        : '<div class="mis-tag unparsed">Misload &middot; ' + (m.raw ? esc(m.raw) : 'detail missing, ask lead') + '</div>';
+      return '<div class="chip mis home">' +
+        '<div class="chip-top"><div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
+        tag +
+        misMeta(m.handler, m.time) +
+        (pkg.tracking ? '<div class="chip-trk">' + trkHtml(pkg.tracking) + '</div>' : '') +
+        flag + '</div>';
+    }
+
+    function ticketHtml(area, tier) {
+      var misCount = area.misloaded.length + area.actorMisloads.length;
+      // "N pkg" counts PHYSICAL packages sitting in THIS ticket's truck
+      // (Tyler's ruling, #443 code review). area.misloaded packages are
+      // HOMED here but scanned AWAY to another truck, so they are excluded
+      // here (they already count in the destination area's actorMisloads).
+      // Derived once in lib/nvs-worklist.js as area.packageCount.
+      var count = area.packageCount;
+      // 2-page cap (7/15 round): chip-heavy tickets widen across the wall
+      // instead of growing into a tall 2-across tower. Pure derivation in
+      // lib/nvs-worklist.js#ticketLayout; here we only stamp the classes.
+      // Misload chips live in the same grid, so they count toward width.
+      var chipCount = area.notLoaded.length + misCount;
+      var layout = NvsWorklistLib.ticketLayout(chipCount, tier);
+      // Actor chips FIRST (this ticket owns those pulls), then the no-scan
+      // chips, then home-misload awareness chips last.
+      var chipList = area.actorMisloads.map(actorChipHtml)
+        .concat(area.notLoaded.map(chipHtml))
+        .concat(area.misloaded.map(homeChipHtml));
+      var chips = chipList.length
+        ? '<div class="chip-grid cols-' + layout.chipCols + '">' + chipList.join('') + '</div>'
+        : '<div class="chip-grid cols-2"><div class="chip-empty">nothing on belt</div></div>';
+      // In the compact WA rail the giant numeral IS the area label —
+      // repeating "Area NNN" under it just eats rail width.
+      var meta = tier === 'compact'
+        ? '<span class="gate-meta">' + count + ' pkg</span>'
+        : '<span class="gate-meta">Area ' + esc(area.area) + '<br>' + count + ' pkg</span>';
+      return '<div class="ticket span-' + layout.span + '">' +
+        '<div class="ticket-head"><span class="gate-num">' + esc(area.area) + '</span>' +
+        meta + '</div>' +
+        chips + '</div>';
+    }
+
+    // Belt-pair grouping key (#513) comes from lib/nvs-worklist.js
+    // (NvsWorklistLib.beltPairKey) — never fork the belt-name parse into the
+    // page; the pair groups must stay identical to the lib's sort groups.
+    function beltHtml(belt, threshold, pairKey, showPair) {
+      var subline = 'REG only &middot; overdue &ge; ' + threshold + 'm';
+      var tickets = belt.areas.map(function (a) { return ticketHtml(a, belt.densityTier); }).join('');
+      // Belt-pair control (#513): one per belt NUMBER, only on the pair's
+      // first sheet, only when the number actually has 2+ sides this drop.
+      var pair = showPair
+        ? '<label class="belt-pair"><input type="checkbox" class="belt-pair-check" data-pair="' +
+          esc(pairKey) + '" checked> pair</label>'
+        : '';
+      // Per-belt print toggle (#443 feedback): checked by default — every
+      // render (fresh drop OR threshold change) resets to all-selected.
+      var toggle = '<label class="belt-select"><input type="checkbox" class="belt-print-check" checked> print</label>';
+      // Per-belt copy count (#512): 1 by default — every render resets to a
+      // single copy, same view-state rule as the toggle.
+      var copies = '<label class="belt-copies"><input type="number" class="belt-copy-count" ' +
+        'min="1" max="99" step="1" value="1" aria-label="Print copies"> copies</label>';
+      var pageEst = '<span class="page-est">~1 page</span>';
+      return '<div class="belt density-' + belt.densityTier + '" data-belt="' + esc(belt.belt) + '"' +
+        (pairKey ? ' data-pair="' + esc(pairKey) + '"' : '') + '>' +
+        '<div class="belt-head"><h2>' + esc(belt.belt) + '</h2>' + pair + toggle + copies + pageEst +
+        '<span class="sub">' + subline + '</span></div>' +
+        '<div class="tickets">' + tickets + '</div>' +
+        '</div>';
+    }
+
+    // Estimate printed pages per belt (#443 feedback): rendered height scaled
+    // to a US-Letter printable area (7.5in x 10in ≈ 720x960 CSS px at 96dpi,
+    // the same calibration the design prototype used). Width-normalized so a
+    // wide screen doesn't understate pages. jsdom reports 0 heights — badge
+    // then stays at the "~1 page" default, which is why the DOM test asserts
+    // wiring, not math; print preview remains the ground truth.
+    // Exact print pagination for a COMPACT belt: its tickets are a simple
+    // full-width stack, and chip text never rewraps (nowrap above), so own-px
+    // block heights measured on screen ARE the print heights. Chrome places
+    // each break-inside:avoid ticket on the next page when it does not fit —
+    // simulate exactly that. All own-px sizes scale by zoom together, so we
+    // compare against a 960/zoom own-px page.
+    var PRINT_PAGE = 960, PRINT_PAD = 34, BELT_GAP = 6;
+    function simPages(beltEl, zoom) {
+      var page = PRINT_PAGE / zoom;
+      var head = beltEl.querySelector('.belt-head');
+      var y = PRINT_PAD + (head ? head.offsetHeight + 10 : 0);
+      var pages = 1;
+      beltEl.querySelectorAll('.ticket').forEach(function (t) {
+        var th = t.offsetHeight + BELT_GAP;
+        if (y + th > page && th <= page) { pages++; y = th; }
+        else { y += th; }
+      });
+      return pages;
+    }
+    // Largest zoom in [lo, hi] whose simulated pagination fits `target`
+    // pages (0.97 shave absorbs sub-pixel drift). Monotone, so bisect.
+    function fitZoom(beltEl, target, lo, hi) {
+      for (var i = 0; i < 12; i++) {
+        var mid = (lo + hi) / 2;
+        if (simPages(beltEl, mid) <= target) lo = mid; else hi = mid;
+      }
+      return lo * 0.97;
+    }
+
+    function updatePageEstimates() {
+      els.sheets.querySelectorAll('.belt').forEach(function (beltEl) {
+        // Copy clones (#512) are print-only and hidden on screen — no layout
+        // to measure, and they inherit the primary's zoom/pad-duplex state
+        // via cloneNode. Never re-derive them.
+        if (beltEl.classList.contains('belt-copy')) return;
+        var badge = beltEl.querySelector('.page-est');
+        if (!badge) return;
+        // Start every pass from the default 8-across layout.
+        beltEl.classList.remove('cols-7', 'cols-6', 'cols-5', 'cols-4');
+        var zoom = 1, pages;
+        if (beltEl.classList.contains('density-compact')) {
+          // Pages are DECIDED here (duplex parity depends on them): fits one
+          // page at full size -> one page; barely over -> snap DOWN to one;
+          // otherwise two pages, stretched or shrunk to fill both exactly.
+          // Stretching narrows the print layout (720/zoom own-px), so wide
+          // stretches also drop chip columns to keep chips readable, and the
+          // simulation re-runs at the new column count (heights change).
+          var one = simPages(beltEl, 1) <= 1 ? 1 : fitZoom(beltEl, 1, 0.4, 1);
+          if (one >= 0.85) { // fits one page at a tolerable size -> snap
+            zoom = Math.min(one, 1);
+            pages = 1;
+          } else {
+            pages = 2;
+            // Stretch ladder (7/15 round 4, second cut): continuous zoom
+            // broke because print width shrinks with zoom (720+/zoom own-px)
+            // and SIDs started wrapping in print but not on the wider
+            // screen, so measured heights lied. These presets keep the
+            // print chip at least as wide as the DEFAULT-columns/zoom-1 chip
+            // Tyler print-approved, assuming a conservative 760px printable
+            // width. Biggest preset whose simulated pagination fits 2
+            // pages wins; the 1.05 divisor is headroom for the mis chips,
+            // whose text may still wrap differently in print.
+            //
+            // Re-derived 2026-07-31 when the default grid went 8 -> 7 across.
+            // The rule is chipWidth = 760/(zoom*cols) >= 760/DEFAULT_COLS,
+            // i.e. zoom*cols <= 7. Each preset keeps margin under that bound
+            // (4 cols allows 1.75, use 1.4; 5 allows 1.4, use 1.2; 6 allows
+            // 1.17, use 1.05). The old [1.05, 7] rung is gone: at 7 default
+            // columns it is a no-op that would have narrowed the chip below
+            // the approved width, which is what shrinks the tracking number
+            // back to unreadable in print.
+            var presets = [[1.4, 4], [1.2, 5], [1.05, 6]];
+            zoom = 0;
+            for (var i = 0; i < presets.length; i++) {
+              beltEl.classList.remove('cols-7', 'cols-6', 'cols-5', 'cols-4');
+              beltEl.classList.add('cols-' + presets[i][1]);
+              if (simPages(beltEl, presets[i][0] * 1.05) <= 2) { zoom = presets[i][0]; break; }
+            }
+            if (!zoom) {
+              // No stretch fits: default columns, fit or shrink under the cap.
+              beltEl.classList.remove('cols-7', 'cols-6', 'cols-5', 'cols-4');
+              zoom = Math.min(fitZoom(beltEl, 2, 0.4, 1), 1);
+            }
+          }
+        } else {
+          // Standard/large tiers: mixed-width ticket grids, no exact model.
+          // These belts are light in practice; keep the conservative
+          // height-ratio estimate (never scale down for wide screens, 1.08
+          // break-avoid slack) and never stretch them.
+          var w = beltEl.offsetWidth, h = beltEl.offsetHeight;
+          var raw = (w > 0 && h > 0) ? (h * Math.max(1, 720 / w)) / 960 : 1;
+          var padded = raw * 1.08;
+          if (raw <= 1.15) {
+            if (padded > 1) zoom = 1 / padded;
+            pages = 1;
+          } else {
+            if (padded > 2) zoom = (2 / padded) * 0.95;
+            pages = 2;
+          }
+        }
+        beltEl.style.setProperty('--print-zoom', zoom);
+        badge.textContent = '~' + pages + (pages === 1 ? ' page' : ' pages') +
+          (zoom < 1 ? ' (shrunk to fit)' : zoom > 1 ? ' (stretched to fill)' : '');
+        badge.classList.toggle('multi', pages > 1);
+        // Odd-page belts get a blank filler page in print (duplex
+        // alignment — see the .pad-duplex print rule).
+        beltEl.classList.toggle('pad-duplex', pages % 2 === 1);
+      });
+    }
+
+    // ── Belt print selection (#443 feedback) ──────────────────────────────
+    // View-state only: lives in the DOM (checkbox + .print-excluded class),
+    // never persisted. Print CSS drops .print-excluded belts entirely.
+    //
+    // ── Per-belt copy counts (#512) ───────────────────────────────────────
+    // Same view-state rule. Each copy is a .belt-copy clone inserted right
+    // after its primary, so every instance is its own print unit: the
+    // .pad-duplex filler aligns every copy to a front side across copy
+    // boundaries, and .print-last (stamped below) suppresses the filler and
+    // trailing break only at the very end of the whole job. The user prints
+    // 1 copy from the browser dialog; the tool owns the math.
+    function setBeltSelected(beltEl, on) {
+      beltEl.classList.toggle('print-excluded', !on);
+      var cb = beltEl.querySelector('.belt-print-check');
+      if (cb) cb.checked = on;
+      // The belt prints as one unit: its copy clones follow the primary.
+      copyClonesOf(beltEl).forEach(function (c) { c.classList.toggle('print-excluded', !on); });
+    }
+
+    function readCopies(beltEl) {
+      var input = beltEl.querySelector('.belt-copy-count');
+      var n = parseInt(input && input.value, 10);
+      return isNaN(n) || n < 1 ? 1 : Math.min(n, 99);
+    }
+    function copyClonesOf(beltEl) {
+      var clones = [], el = beltEl.nextElementSibling;
+      while (el && el.classList.contains('belt-copy')) {
+        clones.push(el);
+        el = el.nextElementSibling;
+      }
+      return clones;
+    }
+    function syncCopies(beltEl) {
+      var n = readCopies(beltEl);
+      var input = beltEl.querySelector('.belt-copy-count');
+      if (input) input.value = String(n); // clamp junk/0 back into the control
+      copyClonesOf(beltEl).forEach(function (c) { c.remove(); });
+      var after = beltEl;
+      for (var i = 1; i < n; i++) {
+        var clone = beltEl.cloneNode(true); // copies classes, zoom style, content
+        clone.classList.add('belt-copy');
+        clone.classList.remove('print-last'); // updatePrintButton re-stamps
+        after.parentNode.insertBefore(clone, after.nextSibling);
+        after = clone;
+      }
+      updatePrintButton();
+    }
+    function updatePrintButton() {
+      var primaries = Array.prototype.slice.call(els.sheets.querySelectorAll('.belt:not(.belt-copy)'));
+      var all = primaries.length;
+      var printingPrimaries = primaries.filter(function (b) { return !b.classList.contains('print-excluded'); });
+      var selected = printingPrimaries.length;
+      // Total belt INSTANCES to print (copies summed) — a belt can itself
+      // span 2 pages, so "sheets" would lie at the printer; say copies.
+      var totalCopies = printingPrimaries.reduce(function (sum, b) { return sum + readCopies(b); }, 0);
+      var haveBelts = all > 0;
+      // Re-stamp .print-last on the last INSTANCE that will actually print
+      // (copy clones included): its page-break-after and duplex filler are
+      // suppressed only at the very end of the whole job, so no trailing
+      // blank page and no mid-job front/back flip.
+      els.sheets.querySelectorAll('.belt.print-last').forEach(function (b) { b.classList.remove('print-last'); });
+      var printing = els.sheets.querySelectorAll('.belt:not(.print-excluded)');
+      if (printing.length) printing[printing.length - 1].classList.add('print-last');
+      // Pair controls (#513) are derived view-state, re-synced from the
+      // sides on every pass: full house -> checked, some sides -> the
+      // half-staffed indeterminate mark, none -> off. Clicking an
+      // indeterminate checkbox sets checked=true, so it re-staffs the pair.
+      els.sheets.querySelectorAll('.belt-pair-check').forEach(function (pc) {
+        var owner = pc.closest('.belt');
+        if (owner && owner.classList.contains('belt-copy')) return; // clones inherit via cloneNode
+        var sides = els.sheets.querySelectorAll('.belt[data-pair="' + pc.getAttribute('data-pair') + '"]:not(.belt-copy)');
+        var on = Array.prototype.filter.call(sides, function (b) {
+          return !b.classList.contains('print-excluded');
+        }).length;
+        pc.checked = on === sides.length;
+        pc.indeterminate = on > 0 && on < sides.length;
+      });
+      els.selectAll.disabled = !haveBelts;
+      els.selectNone.disabled = !haveBelts;
+      els.print.disabled = !haveBelts || selected === 0;
+      var beltWord = all === 1 ? ' belt' : ' belts';
+      var scope = selected === all ? 'all ' + all : selected + ' of ' + all;
+      els.print.textContent = !haveBelts ? 'Print'
+        : totalCopies === selected ? 'Print ' + scope + beltWord
+        : 'Print ' + totalCopies + ' copies (' + scope + beltWord + ')';
+    }
+
+    function setAllBeltSelection(on) {
+      els.sheets.querySelectorAll('.belt').forEach(function (beltEl) {
+        beltEl.classList.toggle('print-excluded', !on);
+        var cb = beltEl.querySelector('.belt-print-check');
+        if (cb) cb.checked = on;
+      });
+      updatePrintButton();
+    }
+
+    function render() {
+      if (!state.records) {
+        els.sheets.innerHTML = '';
+        els.empty.classList.remove('hidden');
+        els.nothing.classList.add('hidden');
+        els.meta.textContent = '';
+        updatePrintButton();
+        return;
+      }
+
+      var threshold = currentThreshold();
+      var result = NvsWorklistLib.buildNvsWorklist(state.records, {
+        now: state.now,
+        thresholdMinutes: threshold,
+        excludeAreas: state.excludeAreas, // #514: flagged hold/closure lanes
+      });
+
+      els.empty.classList.add('hidden');
+
+      var c = result.counts;
+      els.meta.textContent = c.beltCount + ' belts · ' + c.notLoaded + ' not loaded' +
+        (c.misloaded ? ' · ' + c.misloaded + ' misloaded' : '');
+
+      if (!result.belts.length) {
+        els.sheets.innerHTML = '';
+        els.nothing.classList.remove('hidden');
+        updatePrintButton();
+        return;
+      }
+      els.nothing.classList.add('hidden');
+
+      // Belt-pair grouping (#513): count sides per belt number; the pair
+      // control goes on the first sheet of each number that actually has
+      // 2+ sides this drop (a singleton side stays unpaired).
+      var pairKeys = result.belts.map(function (b) { return NvsWorklistLib.beltPairKey(b.belt); });
+      var groupSizes = Object.create(null);
+      pairKeys.forEach(function (k) { if (k) groupSizes[k] = (groupSizes[k] || 0) + 1; });
+      var groupSeen = Object.create(null);
+      els.sheets.innerHTML = result.belts.map(function (belt, i) {
+        var key = pairKeys[i];
+        var showPair = false;
+        if (key && groupSizes[key] > 1 && !groupSeen[key]) { groupSeen[key] = true; showPair = true; }
+        return beltHtml(belt, threshold, key, showPair);
+      }).join('');
+      updatePrintButton();
+      updatePageEstimates();
+    }
+
+    // One reader for both dialects (issue #444): read the raw bytes and let
+    // SpreadsheetLib sniff CSV vs .xlsx by content (not the file's extension,
+    // which FedEx exports mislabel occasionally). readSpreadsheet() returns
+    // rows in CsvLib.parseCSV shape for either source, so NvsReportLib.
+    // parseNvsRows() is the single downstream path — it locates the real
+    // header row by content and maps xlsx's friendly headers onto the CSV's
+    // canonical keys via HEADER_ALIASES, so a record parsed from either
+    // dialect is shape-identical.
+    els.file.addEventListener('change', function (ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onerror = function () {
+        window.alert('Could not read ' + file.name + '.');
+      };
+      reader.onload = function () {
+        SpreadsheetLib.readSpreadsheet(reader.result).then(function (rows) {
+          // A thrown NvsMissingColumnsError (issue #445 — FedEx renamed or
+          // dropped a required column) surfaces here as a promise rejection
+          // and falls into the .catch() below; state.records is never set
+          // from partial/misaligned data.
+          state.records = NvsReportLib.parseNvsRows(rows).records;
+          state.now = readNow(); // pin `now` at load; re-renders reuse it
+          render();
+        }).catch(function (err) {
+          // Reset to the empty state on ANY read/parse failure — including a
+          // loud column-mismatch refusal — so a bad drop never leaves a
+          // previously-rendered worklist on screen (issue #445: no worklist
+          // rendered from partial data).
+          state.records = null;
+          render();
+          window.alert('Error reading report: ' + (err && err.message ? err.message : err));
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    els.threshold.addEventListener('input', render);
+    els.threshold.addEventListener('change', render);
+    els.print.addEventListener('click', function () { window.print(); });
+
+    // Belt print-toggle wiring (#443 feedback): delegated, survives re-render.
+    els.sheets.addEventListener('change', function (ev) {
+      if (!ev.target.classList || !ev.target.classList.contains('belt-print-check')) return;
+      var beltEl = ev.target.closest('.belt');
+      if (!beltEl || beltEl.classList.contains('belt-copy')) return;
+      setBeltSelected(beltEl, ev.target.checked);
+      updatePrintButton();
+    });
+    // Belt-pair wiring (#513): one click staffs (or clears) both sides of a
+    // belt number, clones included. Delegated the same way; a clone's hidden
+    // pair checkbox is inert like its other controls.
+    els.sheets.addEventListener('change', function (ev) {
+      if (!ev.target.classList || !ev.target.classList.contains('belt-pair-check')) return;
+      var owner = ev.target.closest('.belt');
+      if (!owner || owner.classList.contains('belt-copy')) return;
+      var sides = els.sheets.querySelectorAll('.belt[data-pair="' + ev.target.getAttribute('data-pair') + '"]:not(.belt-copy)');
+      sides.forEach(function (b) { setBeltSelected(b, ev.target.checked); });
+      updatePrintButton();
+    });
+    // Copy-count wiring (#512): 'change' covers typed values, 'input' covers
+    // spinner arrows before blur. A clone's hidden input is inert — copies
+    // are driven by the primary.
+    function syncCopiesFromEvent(ev) {
+      if (!ev.target.classList || !ev.target.classList.contains('belt-copy-count')) return;
+      var owner = ev.target.closest('.belt');
+      if (owner && !owner.classList.contains('belt-copy')) syncCopies(owner);
+    }
+    els.sheets.addEventListener('change', syncCopiesFromEvent);
+    els.sheets.addEventListener('input', syncCopiesFromEvent);
+    els.selectAll.addEventListener('click', function () { setAllBeltSelection(true); });
+    els.selectNone.addEventListener('click', function () { setAllBeltSelection(false); });
+
+    // Settings panel wiring (#514): same shape as the IBNO Coder's —
+    // textarea one-per-line or comma-separated, Save persists the list and
+    // re-renders, Reset restores the defaults and drops the saved key.
+    function flashSettingsStatus(msg) {
+      els.settingsStatus.textContent = msg;
+      els.settingsStatus.classList.add('show');
+      setTimeout(function () { els.settingsStatus.classList.remove('show'); }, 2000);
+    }
+    els.settingsBtn.addEventListener('click', function () {
+      if (els.settingsPanel.classList.toggle('open')) {
+        els.areasInput.value = state.excludeAreas.join('\n');
+      }
+    });
+    els.settingsSave.addEventListener('click', function () {
+      state.excludeAreas = els.areasInput.value.split(/[\n,]+/)
+        .map(function (v) { return v.trim(); })
+        .filter(function (v) { return v.length > 0; });
+      toolStorage.set('nvs_excluded_areas', state.excludeAreas);
+      flashSettingsStatus('✓ Saved');
+      render();
+    });
+    els.settingsReset.addEventListener('click', function () {
+      state.excludeAreas = NvsWorklistLib.DEFAULT_EXCLUDED_WORK_AREAS.slice();
+      toolStorage.remove('nvs_excluded_areas');
+      els.areasInput.value = state.excludeAreas.join('\n');
+      flashSettingsStatus('↺ Reset');
+      render();
+    });
+
+    render();
+  })();
+  </script>
+</body>
+</html>
