@@ -150,6 +150,13 @@
     }
     .belt-head h2 { font-size: 28px; margin: 0; letter-spacing: 0.02em; font-weight: 900; }
     .belt-head .sub { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+    /* Flagged-area note (#866): PRINT-ONLY chrome. The screen already carries
+       the tally once, on #meta in .controls (#860/#864) — repeating it in
+       every belt header on screen is noise. Paper is the surface that has
+       nothing, because .controls is display:none in print. Hidden here,
+       un-hidden in the print block below; the pair is what makes it a
+       print-surface fix rather than another screen one. */
+    .belt-head .print-note { display: none; }
 
     /* ── Per-belt print toggle (screen-only chrome, like .controls) ───────
        Tyler's #443 feedback: select WHICH belts print. Selection is
@@ -519,6 +526,24 @@
       .page-est { display: none !important; }
       .belt-head { border-bottom-color: black; }
       .belt-head h2 { color: black; }
+      /* #866: the flagged-area count reaches the paper. Explicit black (not
+         var(--text-muted), which is a theme token and would print grey or
+         near-white depending on the device's theme) and bold, because this is
+         the one line telling a handler work was withheld from the sheet in
+         their hands. Always renders, including "0 withheld" — see
+         NvsWorklistLib.flaggedAreaPrintNote for why paper does not
+         zero-suppress the way the screen does.
+
+         margin-left MUST be reset. `.print-note` also carries class `sub`,
+         and `.belt-head .sub` sets `margin-left: auto` — TWO flex items with
+         auto margins SPLIT the free space between them, so leaving it
+         inherited pushed the existing "REG only · overdue ≥ 45m" subline off
+         the right edge and into the middle of the printed belt head (measured
+         in real Chrome: 1105→1231 on main, 523→650 with the margin
+         inherited). 0, not 12px: `.belt-head` already has `gap: 12px`, so the
+         separation matches every other pair in the head. Only `.sub` keeps
+         the auto margin, so the two right-align as one group. */
+      .belt-head .print-note { display: inline; color: black; font-weight: 700; margin-left: 0; }
       .ticket { border-color: black; }
       /* B&W-printer robustness: most print drivers ship with "background
          graphics" OFF, which strips the black band and leaves the white gate
@@ -758,7 +783,7 @@
     // Belt-pair grouping key (#513) comes from lib/nvs-worklist.js
     // (NvsWorklistLib.beltPairKey) — never fork the belt-name parse into the
     // page; the pair groups must stay identical to the lib's sort groups.
-    function beltHtml(belt, threshold, pairKey, showPair) {
+    function beltHtml(belt, threshold, pairKey, showPair, printNote) {
       var subline = 'REG only &middot; overdue &ge; ' + threshold + 'm';
       var tickets = belt.areas.map(function (a) { return ticketHtml(a, belt.densityTier); }).join('');
       // Belt-pair control (#513): one per belt NUMBER, only on the pair's
@@ -778,7 +803,12 @@
       return '<div class="belt density-' + belt.densityTier + '" data-belt="' + esc(belt.belt) + '"' +
         (pairKey ? ' data-pair="' + esc(pairKey) + '"' : '') + '>' +
         '<div class="belt-head"><h2>' + esc(belt.belt) + '</h2>' + pair + toggle + copies + pageEst +
-        '<span class="sub">' + subline + '</span></div>' +
+        '<span class="sub">' + subline + '</span>' +
+        // #866: print-only flagged-area note, on EVERY belt sheet — belts are
+        // torn apart and handed to different handlers, so a note on page 1
+        // only would reach one of them. The string comes from the lib; never
+        // re-inline it here.
+        '<span class="sub print-note">&middot; ' + esc(printNote) + '</span></div>' +
         '<div class="tickets">' + tickets + '</div>' +
         '</div>';
     }
@@ -1015,8 +1045,10 @@
       els.empty.classList.add('hidden');
 
       var c = result.counts;
-      els.meta.textContent = c.beltCount + ' belts · ' + c.notLoaded + ' not loaded' +
-        (c.misloaded ? ' · ' + c.misloaded + ' misloaded' : '');
+      // #860: the meta string (including the flagged-area tally #514 has
+      // computed all along but never showed) is composed in the lib so the
+      // exact wording and number are unit-testable. Do not re-inline it.
+      els.meta.textContent = NvsWorklistLib.metaSummary(c);
 
       if (!result.belts.length) {
         els.sheets.innerHTML = '';
@@ -1033,11 +1065,15 @@
       var groupSizes = Object.create(null);
       pairKeys.forEach(function (k) { if (k) groupSizes[k] = (groupSizes[k] || 0) + 1; });
       var groupSeen = Object.create(null);
+      // #866: one note string for the whole drop, stamped onto every belt
+      // sheet. Computed in the lib so the wording and the number are
+      // unit-testable — do not re-inline it.
+      var printNote = NvsWorklistLib.flaggedAreaPrintNote(c);
       els.sheets.innerHTML = result.belts.map(function (belt, i) {
         var key = pairKeys[i];
         var showPair = false;
         if (key && groupSizes[key] > 1 && !groupSeen[key]) { groupSeen[key] = true; showPair = true; }
-        return beltHtml(belt, threshold, key, showPair);
+        return beltHtml(belt, threshold, key, showPair, printNote);
       }).join('');
       updatePrintButton();
       updatePageEstimates();

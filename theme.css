@@ -139,6 +139,39 @@ html[data-theme="dark"] textarea {
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder { color: #8a8a97; }
 
+/* IBNO Coder's FILLED Goes To box (#832). The tool's own
+   `.goesto-input.has-area` — the branded border + text that says "this row is
+   answered" at a glance — is (0,2,0), and the generic dark form-field rule
+   directly above is (0,2,2). So in DARK MODE it lost the cascade outright and
+   an answered box computed byte-identically to an empty one: measured on the
+   real 289-row 2026-08-12 Post Sort export, colour #e7e7ec and border #3a3b4a
+   on both, against #c4b5fd/#c4b5fd in light. Pre-existing on main, and
+   invisible to the suite because the highlight was ONLY ever painted on commit
+   until #832 — so there was no build-path assertion to notice it.
+
+   Exactly the shape of the .code-select override below, for exactly the reason
+   issue 504 records and this file exists: theme.css loads last, so a dark value
+   put inline in the tool cannot win this. This selector is (0,4,2) — two
+   elements (html, input) and four attribute/class simple selectors
+   ([data-theme], [type], .goesto-input, .has-area) — so it outranks the (0,2,2)
+   generic rule.
+
+   THE VALUE IS HARDCODED, not var(--brand-ink), and that is deliberate. The
+   token is defined by each TOOL's own inline <style>, not by this file, so a
+   shared stylesheet reading it would be depending on something it does not
+   define — inert today, because every tool this selector can reach defines it,
+   and a latent break for any future tool that loads theme.css without one.
+   #c4b5fd is the same value ibno-coder.html gives --brand-ink in dark, and the
+   .code-select override below hardcodes for the same reason.
+
+   Only colour and border-color are restored. The rule's background
+   (var(--hover-soft)) resolves to #23242f in dark, which is what the generic
+   rule already paints, so overriding it would change nothing. */
+html[data-theme="dark"] input[type="text"].goesto-input.has-area {
+  color: #c4b5fd;
+  border-color: #c4b5fd;
+}
+
 /* IBNO Coder code override (.code-select, the 59/11 -> 34 dropdown on Closure
    Portal rows). It is a <select> styled as a purple code pill, so the generic
    dark select rule above — (0,1,2), against the tool's inline .code-select at
@@ -156,6 +189,49 @@ html[data-theme="dark"] .code-select.override-34 {
   background: #c05621;
   color: #fff;
 }
+
+/* ── Secondary "gray" buttons (issue 767) ────────────────────────────────────
+ * `.btn-gray` is the shared secondary-action button. Five tools
+ * (ibno-coder, masterlist-builder, time-off-log, schedule, qa-checklist)
+ * define it inline as `background:#e4e4e7; color:#333` with NO dark rule
+ * anywhere, so it computed identically in both themes: near-white rectangles
+ * on a near-black page (34 uses in ibno-coder alone). capture.html had already
+ * built the same class out of theme tokens, which is what identifies this as an
+ * oversight rather than a deliberate "keep these light in both themes" choice —
+ * a deliberate choice would not have been made in exactly one of six tools.
+ *
+ * Fixed here rather than by tokenizing the five inline rules, for the two
+ * reasons this file exists: theme.css loads last, so a dark value put inline
+ * can silently lose to a generic selector here (issue 504); and
+ * tests/theme-contrast-dom.test.js budgets hardcoded hex in the tools, so dark
+ * values must not accumulate there. Keeping the light rule untouched also means
+ * light mode is byte-identical to before — this ticket is dark-only.
+ *
+ * `html[data-theme="dark"] .btn-gray` is (0,2,1) against capture.html's
+ * (0,1,0), so the six tools converge on one dark appearance (AC2).
+ * --text on --border measures 10.73:1 in dark; the text was never the problem,
+ * the surface was. The button reads as a surface against the page at 1.38:1 —
+ * deliberately low (a secondary button is a quiet surface, not a call to
+ * action), which is why tests/theme-contrast-dom.test.js pins that number as a
+ * DRIFT DETECTOR rather than gating it at 3:1. It is not what catches #767: the
+ * light/dark polarity assertion beside it is.
+ *
+ * Written in TOKENS, not literals (issue 808). The dark values here are
+ * byte-identical to --border / --text / --border-strong, which are defined
+ * ~130 lines above IN THIS FILE. Restating them as hex is how drift starts:
+ * retune --border later and this button silently stops matching every other
+ * surface that uses it, with nothing failing. The contrast assertions in
+ * tests/theme-contrast-dom.test.js resolve these vars from the token block,
+ * so a retune moves the measured ratio and fails there instead of shipping.
+ */
+html[data-theme="dark"] .btn-gray {
+  background: var(--border);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+/* Hover is the same literal-vs-token trap one line down: #3a3b4a IS
+   --border-strong. Tokenized with the rule above so the two cannot drift apart. */
+html[data-theme="dark"] .btn-gray:hover { background: var(--border-strong); }
 
 /* ── Muted / secondary text ───────────────────────────────────────────────── */
 html[data-theme="dark"] .hint,
