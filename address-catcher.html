@@ -1329,6 +1329,16 @@
        just told their loaded reports won't survive navigation this time. -->
   <div class="zone-status error" id="storage-warning" role="status" hidden></div>
 
+  <!-- Learning-store write failure (issue #496). SEPARATE from #storage-warning
+       above on purpose: that banner says "your loaded REPORTS won't survive
+       navigating away", which is a different and much smaller loss than "the
+       DICTIONARY stopped accumulating". Reusing one banner would make whichever
+       fired second overwrite a sentence that is still true — the same reason
+       ibno-coder.html refuses to reuse its own #storage-warning for a second
+       payload. Text is built by AddressCatcherPersist.storageWarningText() and
+       names the stores that were refused. -->
+  <div class="zone-status error" id="dict-storage-warning" role="alert" hidden></div>
+
   <section class="results-card" id="results">
     <div class="results-head">
       <h2>Worklist</h2>
@@ -1454,13 +1464,59 @@
       dictionary = AddressCatcherSession.restore(raw ? JSON.parse(raw) : null);
     } catch (e) { dictionary = {}; }
 
+    // ── Loud learning-store writes (issue #496) ───────────────────────────
+    //
+    // Until #496 each of these was `try { setItem } catch (e) {}` — on a full
+    // localStorage the dictionary silently stopped learning and nothing on
+    // screen said so. #496 measured ~2.5 MB of serialized dictionary from ONE
+    // real export against a ~5 MB origin quota, with the per-group
+    // `trackingSeen` dedupe sets uncapped by design, so the store grows every
+    // drop. Tyler's decision (2026-09-04): fail LOUD, the way the IBNO Coder's
+    // storage warning does. The write mechanics (remove-before-write, restore
+    // the previous value when the new one is refused) live in
+    // lib/address-catcher-persist.js; this block owns only the DOM.
+
+    // Which learning stores are currently unsaved. A Set, not a one-shot latch:
+    // #storage-warning above latches because "reports won't survive navigation"
+    // stays true for the session, but a dictionary write CAN start succeeding
+    // again the moment the operator frees space — and a banner that lingers
+    // after that would train them to ignore it.
+    const failedStores = new Set();
+    const lostStores = new Set();   // previous value gone too (quotaSafeWrite lost:true)
+    let failedWasQuota = false;
+
+    function renderDictStorageWarning() {
+      const el = $('dict-storage-warning');
+      if (!el) return;
+      if (!failedStores.size) { el.hidden = true; el.textContent = ''; failedWasQuota = false; lostStores.clear(); return; }
+      el.textContent = AddressCatcherPersist.storageWarningText(Array.from(failedStores), failedWasQuota, Array.from(lostStores));
+      el.hidden = false;
+    }
+
+    // writeLearningStore(key, value, label) -> true when it landed. Records the
+    // outcome against `label` and repaints the banner, so a recovered write
+    // clears its own line and the banner disappears once everything saves.
+    function writeLearningStore(key, value, label) {
+      let json;
+      try { json = JSON.stringify(value); }
+      catch (e) { return false; } // unserializable — not a storage problem
+      const res = AddressCatcherPersist.quotaSafeWrite(localStorage, key, json);
+      if (res.ok) { failedStores.delete(label); lostStores.delete(label); }
+      else { failedStores.add(label); if (res.quota) failedWasQuota = true; if (res.lost) lostStores.add(label); }
+      renderDictStorageWarning();
+      return res.ok;
+    }
+
+    const DICT_LABEL = 'Address Correction Dictionary';
+    const AREA_DICT_LABEL = 'Area Dictionary';
+    const CORRECTION_LOG_LABEL = 'correction feedback log';
+
     function persistDictionary() {
-      try {
-        localStorage.setItem(
-          AddressCatcherSession.STORAGE_KEY,
-          JSON.stringify(AddressCatcherSession.snapshot(dictionary))
-        );
-      } catch (e) { /* private mode / quota — dictionary still works this session */ }
+      writeLearningStore(
+        AddressCatcherSession.STORAGE_KEY,
+        AddressCatcherSession.snapshot(dictionary),
+        DICT_LABEL
+      );
     }
 
     // Area Dictionary (issue #451): its own accumulating device-local store,
@@ -1475,12 +1531,11 @@
     } catch (e) { areaDictionary = {}; }
 
     function persistAreaDictionary() {
-      try {
-        localStorage.setItem(
-          AddressCatcherSession.AREA_STORAGE_KEY,
-          JSON.stringify(AddressCatcherSession.snapshot(areaDictionary))
-        );
-      } catch (e) { /* private mode / quota — still works this session */ }
+      writeLearningStore(
+        AddressCatcherSession.AREA_STORAGE_KEY,
+        AddressCatcherSession.snapshot(areaDictionary),
+        AREA_DICT_LABEL
+      );
     }
 
     // Threshold control (#343): "times seen" floor before a mapping surfaces,
@@ -2492,9 +2547,11 @@
         return Array.isArray(parsed) ? parsed : [];
       } catch (e) { return []; }
     }
+    // The correction feedback log (ADR-0018) is learning too — a rejected
+    // mapping that fails to save comes back on the next load, so a silent drop
+    // here re-surfaces work the operator already dismissed. Loud, per #496.
     function saveCorrectionLog() {
-      try { localStorage.setItem(CORRECTION_LOG_KEY, JSON.stringify(correctionLog)); }
-      catch (e) { /* private mode / quota — the reject still holds this session */ }
+      writeLearningStore(CORRECTION_LOG_KEY, correctionLog, CORRECTION_LOG_LABEL);
     }
     function nowIso() { return new Date().toISOString(); }
 

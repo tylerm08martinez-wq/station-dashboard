@@ -57,6 +57,36 @@ html[data-theme="dark"] {
   --field-bg-alt:   #23242f;
   --hover-soft:     #23242f;
   --hover-row:      #2b2c3a;
+  /* The dark half of the IBNO Coder's --warn-ink (#954). Its LIGHT value lives
+     in that tool's inline <style>, next to --danger-ink and --ok-ink; the dark
+     one is here because this file loads after every tool's inline styles and
+     wins, so a dark value written inline could be silently overridden from
+     here — the PR #504 trap. #b45309 goes muddy on the dark --surface, so this
+     is lifted the same way --danger-ink's dark value is.
+
+     Only the IBNO Coder reads it today. It is a token, not a rule, so a tool
+     that never mentions var(--warn-ink) renders exactly as before. */
+  --warn-ink:       #fbbf24;
+  /* The dark half of the IBNO Coder's carried-early chip (#805). Its LIGHT
+     values live in that tool's inline <style>, beside --warn-ink's; these are
+     here for the same reason --warn-ink's dark value is, and it is the whole
+     point of the split: this file loads last, so a dark value written inline
+     would be silently overridden from here (the PR #504 trap).
+
+     WHY THESE TWO VALUES. #b45309 is --warn-ink's light value reused as a FILL
+     on the dark surface, where it lands at 3.27:1 against --surface and 3.08:1
+     against the --surface-2 zebra — clearing the ~3:1 bar #805 set, on both of
+     the backgrounds a .goesto-cell can have. It is deliberately not the bright
+     #fbbf24 above: that is the chip's BORDER here (9.85:1 against the cell), and
+     a chip filled with it would be a lantern in a dark row rather than a mark.
+     The ink is pure white rather than var(--text) because #e7e7ec on #b45309 is
+     4.04:1, under AA for the chip's 9.5px bold label; white is 4.99:1.
+
+     Only the IBNO Coder reads these. They are tokens, not rules, so any tool
+     that never mentions var(--early-tag-bg) renders exactly as before.
+     tests/ibno-early-tag-salience-dom.test.js pins all of it. */
+  --early-tag-bg:   #b45309;
+  --early-tag-ink:  #ffffff;
 }
 
 html[data-theme="dark"] body {

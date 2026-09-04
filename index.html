@@ -171,6 +171,7 @@
 <footer>Station 849 / NPHO — Internal Use Only · read-only mirror, not the record</footer>
 
 <script src="lib/tool-helpers.js"></script>
+<script src="lib/schedule-coverage.js"></script>
 <script src="lib/qa-checklist.js"></script>
 <script src="lib/time-off.js"></script>
 <script src="lib/attendance-rules.js"></script>
@@ -245,14 +246,14 @@
     });
     if (!raw || !String(raw).trim()) return { scheduleView: null, coverage: null };
     try {
-      const parsed = ToolHelpers.parseScheduleInput(raw);
+      const parsed = ScheduleCoverage.parseScheduleInput(raw);
       const hasData = parsed && (parsed.areas.length || parsed.counts.length || parsed.shifts.length);
       if (!hasData) return { scheduleView: null, coverage: null };
       const idx = ToolHelpers.todayIndex();
-      const view = ToolHelpers.selectDay(parsed, idx);
-      const coverage = ToolHelpers.deriveCoverage(view.assignedAreas, ToolHelpers.SORT_AREAS);
+      const view = ScheduleCoverage.selectDay(parsed, idx);
+      const coverage = ScheduleCoverage.deriveCoverage(view.assignedAreas, ScheduleCoverage.SORT_AREAS);
       // Per-area roster feeds Floor-Absence coverage reconciliation (ADR-0008).
-      const assigneesByArea = ToolHelpers.assigneesByArea(parsed, idx);
+      const assigneesByArea = ScheduleCoverage.assigneesByArea(parsed, idx);
       return { scheduleView: view, coverage: coverage, assigneesByArea: assigneesByArea };
     } catch (e) {
       return { scheduleView: null, coverage: null, assigneesByArea: null };
@@ -335,7 +336,7 @@
     if (cov.allCovered) {
       cls = 'ok';
       inner = '<div class="tile-big" style="font-size:24px;color:var(--ok)">All covered</div>' +
-        '<div class="tile-sub">' + ToolHelpers.SORT_AREAS.map(esc).join(' · ') + '</div>';
+        '<div class="tile-sub">' + ScheduleCoverage.SORT_AREAS.map(esc).join(' · ') + '</div>';
     } else {
       cls = cov.cannotSkip.length ? 'crit' : 'warn';
       const tags = cov.uncovered.map(function (u) {

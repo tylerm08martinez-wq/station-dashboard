@@ -433,8 +433,8 @@
 <footer>Station 849 / NPHO &mdash; Internal Use Only</footer>
 
 <script src="lib/tool-helpers.js"></script>
-<script src="lib/schedule-analysis.js"></script>
 <script src="lib/schedule-coverage.js"></script>
+<script src="lib/schedule-analysis.js"></script>
 <script src="lib/schedule-principles.js"></script>
 <script src="lib/schedule-data.js"></script>
 <script src="lib/schedule-export.js"></script>
@@ -458,11 +458,11 @@ const AREA_LEGEND = {
 };
 
 // ─── PARSER ─────────────────────────────────────────────────────────────────────
-// parseScheduleInput lives in the shared helpers lib (issue #78) so the Schedule
+// parseScheduleInput lives in lib/schedule-coverage.js (issues #78, #328) so the Schedule
 // Viewer and the dashboard hub parse identically — single-source principle. The
 // interface is unchanged: raw text in, { days, areas, shifts, counts } out. It is
 // a pure function (no DOM, no side effects) and unit-tested via tests/schedule.test.js.
-const parseScheduleInput = ToolHelpers.parseScheduleInput;
+const parseScheduleInput = ScheduleCoverage.parseScheduleInput;
 const normalizeCode = ToolHelpers.normalizeCode;
 const isOff = ToolHelpers.isOff;
 const areaClass = ToolHelpers.areaClass;

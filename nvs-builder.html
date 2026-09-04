@@ -470,6 +470,18 @@
        and letter-spacing must be 0 (the base rule's 0.02em costs enough width
        to overflow on its own). Coupled to the column count above. */
     .density-compact .chip .chip-trk { font-size: 8.5px; line-height: 1.15; margin-top: 1px; white-space: nowrap; letter-spacing: 0; }
+    /* That 8.5px ceiling was measured on a 12-digit number. Real exports also
+       carry FIFTEEN-digit numbers (multi-piece Ground shipments: 11 of ~2,500
+       rows on both the 07-15 and 07-31 exports, consecutive numbers clustered
+       on one work area). Measured in real Chrome at Chrome's default print
+       margins: 15 digits at 8.5px is 70.9px in a 76px chip (5px spare) where
+       12 digits is 56.7px (17px spare) -- a wider printer margin and the run of
+       four or five bleeds into each other on paper (Tyler, 2026-09-04). The
+       renderer stamps .chip-trk-long on anything past 12 chars; 7px puts 15
+       digits at ~58px, the width a 12-digit number takes, so the same chip
+       fits either with the same spare. Anything longer still (SmartPost 20/22)
+       wraps inside its chip instead of running under the neighbour. */
+    .density-compact .chip .chip-trk.chip-trk-long { font-size: 7px; white-space: normal; overflow-wrap: anywhere; }
     /* Misload chips keep wrapping: their lines are longer and they are rare
        enough that a taller chip beats clipped information. */
     .density-compact .chip.mis .chip-time { white-space: normal; }
@@ -687,6 +699,18 @@
       return FTrack.ftrackLink(tracking, { className: 'chip-trk-link', text: tracking }) || esc(tracking);
     }
 
+    // The chip's tracking line, shared by all three chip builders. The compact
+    // tier sizes .chip-trk against a 12-digit PKG_LABEL_XREF; a longer number
+    // (15-digit multi-piece Ground, in every real export) is stamped
+    // .chip-trk-long so CSS can shrink it into the same width instead of
+    // letting it bleed into the neighbour chip on paper.
+    var TRK_LONG_OVER = 12;
+    function trkLineHtml(tracking) {
+      if (!tracking) return '';
+      var cls = 'chip-trk' + (String(tracking).length > TRK_LONG_OVER ? ' chip-trk-long' : '');
+      return '<div class="' + cls + '">' + trkHtml(tracking) + '</div>';
+    }
+
     function chipHtml(pkg) {
       var known = !(pkg.unknownTime || !pkg.ibTime);
       var flag = pkg.statusCodes ? '<div class="chip-flag">' + esc(pkg.statusCodes) + '</div>' : '';
@@ -694,7 +718,7 @@
         '<div class="chip-top"><div class="chip-check"></div>' +
         '<div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
         '<div class="chip-time' + (known ? '' : ' unknown') + '">' + esc(chipTimeText(pkg)) + '</div>' +
-        (pkg.tracking ? '<div class="chip-trk">' + trkHtml(pkg.tracking) + '</div>' : '') +
+        trkLineHtml(pkg.tracking) +
         flag +
         '</div>';
     }
@@ -726,7 +750,7 @@
         '<div class="chip-sid">' + esc(item.sortSid) + '</div></div>' +
         '<div class="mis-tag">Misload &rarr; <span class="mis-dest">' + esc(item.homeArea) + '</span></div>' +
         misMeta(item.handler, item.time) +
-        (item.tracking ? '<div class="chip-trk">' + trkHtml(item.tracking) + '</div>' : '') +
+        trkLineHtml(item.tracking) +
         flag + '</div>';
     }
 
@@ -743,7 +767,7 @@
         '<div class="chip-top"><div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
         tag +
         misMeta(m.handler, m.time) +
-        (pkg.tracking ? '<div class="chip-trk">' + trkHtml(pkg.tracking) + '</div>' : '') +
+        trkLineHtml(pkg.tracking) +
         flag + '</div>';
     }
 
@@ -820,8 +844,11 @@
     // then stays at the "~1 page" default, which is why the DOM test asserts
     // wiring, not math; print preview remains the ground truth.
     // Exact print pagination for a COMPACT belt: its tickets are a simple
-    // full-width stack, and chip text never rewraps (nowrap above), so own-px
-    // block heights measured on screen ARE the print heights. Chrome places
+    // full-width stack, and chip text does not rewrap between screen and
+    // print (nowrap above; the two exceptions, misload .chip-time and a
+    // .chip-trk-long past ~19 chars, are rare enough that the 1.05 headroom
+    // below absorbs them), so own-px block heights measured on screen ARE
+    // the print heights. Chrome places
     // each break-inside:avoid ticket on the next page when it does not fit —
     // simulate exactly that. All own-px sizes scale by zoom together, so we
     // compare against a 960/zoom own-px page.
