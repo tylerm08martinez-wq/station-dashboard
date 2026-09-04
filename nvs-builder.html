@@ -373,6 +373,24 @@
       padding: 0 3px;
       margin-top: 2px;
     }
+    /* Priority package tag (Tyler, 2026-09-04): the report's HOT PKG column
+       (PRIORITY_PACKAGE) is blank or "PO", 12-13 rows per real export. Sits
+       on its own line under the SID — the compact chip-top row is already
+       full at checkbox + a 6-char FL SID. Heaviest weight and a solid border,
+       no background: type + border survives a B&W driver with backgrounds
+       off, the same rule the ticket head follows. */
+    .chip .chip-prio {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 900;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      color: var(--text);
+      border: 1.5px solid var(--text);
+      border-radius: 3px;
+      padding: 0 4px;
+      margin-top: 2px;
+    }
 
     /* ── Misload CHIPS (Tyler, 7/15 round 3; supersedes the #441 weighted
        rows) — misloads sit IN the chip grid at full chip size so they can't
@@ -416,6 +434,7 @@
     .density-large .chip .chip-time { font-size: 12px; margin-top: 4px; }
     .density-large .chip .chip-trk { font-size: 10px; margin-top: 2px; }
     .density-large .chip .chip-flag { font-size: 9px; margin-top: 4px; }
+    .density-large .chip .chip-prio { font-size: 13px; padding: 0 6px; margin-top: 4px; }
     .density-large .mis-tag { font-size: 12px; }
     .density-large .mis-tag .mis-dest { font-size: 19px; }
 
@@ -488,6 +507,11 @@
     .density-compact .mis-tag { margin-top: 0; font-size: 8px; }
     .density-compact .mis-tag .mis-dest { font-size: 12px; }
     .density-compact .chip .chip-flag { font-size: 5.5px; }
+    /* 10px, above the 8.5px tracking line on the same chip: PO is "find this
+       one first", the tracking number is the afterthought, and the hierarchy
+       must read that way at arm's length (PR #969 review). Height cost lands
+       on ~6 REG chips per export and the estimator measures real heights. */
+    .density-compact .chip .chip-prio { font-size: 10px; margin-top: 1px; padding: 0 4px; }
 
     /* ── Print: page-break per belt, hide controls, black-on-white ──────── */
     @media print {
@@ -575,6 +599,7 @@
          black number it has always been — no underline, no link color. */
       .chip .chip-trk-link { color: black; text-decoration: none; }
       .chip .chip-flag { border-color: black; }
+      .chip .chip-prio { color: black; border-color: black; }
       /* Black-on-white print: the actor/home weighting survives via border
          weight and solid-vs-dashed (color is screen-only). */
       .chip.mis { border-color: black; background: white; }
@@ -711,12 +736,20 @@
       return '<div class="' + cls + '">' + trkHtml(tracking) + '</div>';
     }
 
+    // Priority tag (HOT PKG column), shared by all three chip builders. Prints
+    // the report's own value ("PO") so a new code would show up as itself
+    // rather than silently vanish.
+    function prioHtml(priority) {
+      return priority ? '<div class="chip-prio">' + esc(priority) + '</div>' : '';
+    }
+
     function chipHtml(pkg) {
       var known = !(pkg.unknownTime || !pkg.ibTime);
       var flag = pkg.statusCodes ? '<div class="chip-flag">' + esc(pkg.statusCodes) + '</div>' : '';
       return '<div class="chip">' +
         '<div class="chip-top"><div class="chip-check"></div>' +
         '<div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
+        prioHtml(pkg.priority) +
         '<div class="chip-time' + (known ? '' : ' unknown') + '">' + esc(chipTimeText(pkg)) + '</div>' +
         trkLineHtml(pkg.tracking) +
         flag +
@@ -748,6 +781,7 @@
       return '<div class="chip mis actor">' +
         '<div class="chip-top"><div class="chip-check"></div>' +
         '<div class="chip-sid">' + esc(item.sortSid) + '</div></div>' +
+        prioHtml(item.priority) +
         '<div class="mis-tag">Misload &rarr; <span class="mis-dest">' + esc(item.homeArea) + '</span></div>' +
         misMeta(item.handler, item.time) +
         trkLineHtml(item.tracking) +
@@ -765,6 +799,7 @@
         : '<div class="mis-tag unparsed">Misload &middot; ' + (m.raw ? esc(m.raw) : 'detail missing, ask lead') + '</div>';
       return '<div class="chip mis home">' +
         '<div class="chip-top"><div class="chip-sid">' + esc(pkg.sortSid) + '</div></div>' +
+        prioHtml(pkg.priority) +
         tag +
         misMeta(m.handler, m.time) +
         trkLineHtml(pkg.tracking) +
