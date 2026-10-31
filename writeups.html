@@ -133,6 +133,16 @@
     #admin-select { width: 100%; font-weight: 600; }
     #add-admin-form { margin-top: 10px; }
 
+    /* Scheduled days (#1112): seven day checkboxes in one wrapping row. */
+    .workdays { margin-top: 14px; padding: 0; border: none; min-width: 0; }
+    .workdays legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .workdays-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .workdays .wd { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: 5px; cursor: pointer; }
+    .workdays .wd:hover { background: var(--hover-soft); }
+    .workdays .wd input { width: 16px; height: 16px; accent-color: #4D148C; margin: 0; }
+    .workdays .wd.disabled { opacity: 0.5; cursor: not-allowed; }
+    .workdays .workdays-hint { margin-top: 6px; font-size: 12px; }
+
     #incident-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
     #incident-form .form-actions { display: flex; gap: 8px; grid-column: 1 / -1; }
     #incident-form .inc-hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
@@ -174,6 +184,7 @@
     .habitual input { width: 16px; height: 16px; accent-color: #4D148C; }
     .habitual-note { color: var(--text-muted); font-size: 12px; }
 
+    .schedule-note { margin-bottom: 14px; padding: 6px 8px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 4px; font-size: 13px; color: var(--text-muted); }
     .not-drafted { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
     .not-drafted p { padding: 6px 8px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 4px; margin-bottom: 4px; }
 
@@ -258,6 +269,19 @@
           </label>
           <button type="submit" class="btn btn-gray" id="add-admin-btn">Add</button>
         </form>
+        <fieldset class="workdays" id="workdays" aria-describedby="workdays-hint">
+          <legend>Scheduled days</legend>
+          <div class="workdays-row">
+            <label class="wd" for="wd-0"><input type="checkbox" id="wd-0" data-day="0"> Sun</label>
+            <label class="wd" for="wd-1"><input type="checkbox" id="wd-1" data-day="1"> Mon</label>
+            <label class="wd" for="wd-2"><input type="checkbox" id="wd-2" data-day="2"> Tue</label>
+            <label class="wd" for="wd-3"><input type="checkbox" id="wd-3" data-day="3"> Wed</label>
+            <label class="wd" for="wd-4"><input type="checkbox" id="wd-4" data-day="4"> Thu</label>
+            <label class="wd" for="wd-5"><input type="checkbox" id="wd-5" data-day="5"> Fri</label>
+            <label class="wd" for="wd-6"><input type="checkbox" id="wd-6" data-day="6"> Sat</label>
+          </div>
+          <p id="workdays-hint" class="muted workdays-hint">Optional. Adds a work schedule line to Call-off, NCNS and sick pattern drafts, and warns when one falls on a day not checked here.</p>
+        </fieldset>
         <p id="admin-error" class="error" hidden></p>
       </div>
     </div>
@@ -358,6 +382,7 @@
           <span id="habitual-note" class="habitual-note" hidden></span>
         </div>
         <div id="not-drafted" class="not-drafted" hidden></div>
+        <p id="schedule-note" class="schedule-note" hidden></p>
         <p id="draft-hint" class="muted draft-hint">Check one or more incidents to build the draft.</p>
         <div id="boxes"></div>
         <div id="check-line" class="check-line" aria-live="polite"></div>
@@ -449,7 +474,36 @@
     Array.prototype.forEach.call($('history-form').querySelectorAll('input, select, button'), function (el) {
       el.disabled = blocked || admins.length === 0;
     });
+    renderWorkDays(blocked);
   }
+
+  // Scheduled days (#1112): the seven boxes show the picked admin's saved
+  // days and are off when there is no admin or the saved data is unreadable.
+  function renderWorkDays(blocked) {
+    var admin = currentAdmin();
+    var days = admin && Array.isArray(admin.workDays) ? admin.workDays : [];
+    Array.prototype.forEach.call($('workdays').querySelectorAll('input[data-day]'), function (box) {
+      box.checked = days.indexOf(Number(box.dataset.day)) !== -1;
+      box.disabled = !admin || blocked;
+      box.parentNode.classList.toggle('disabled', box.disabled);
+    });
+  }
+
+  $('workdays').addEventListener('change', function () {
+    var admin = currentAdmin();
+    if (!admin) return;
+    if (store.unreadable().length) return showError('admin-error', UNREADABLE_MSG);
+    var days = [];
+    Array.prototype.forEach.call($('workdays').querySelectorAll('input[data-day]'), function (box) {
+      if (box.checked) days.push(Number(box.dataset.day));
+    });
+    if (!store.setAdminWorkDays(admin.id, days)) {
+      showError('admin-error', 'This browser would not save the scheduled days.');
+    } else {
+      showError('admin-error', '');
+    }
+    renderAll();
+  });
 
   var UNREADABLE_MSG = 'Saved writeup data on this device could not be read. Nothing was changed.';
 
@@ -800,6 +854,8 @@
       nd.appendChild(p);
     });
     nd.hidden = result.notDrafted.length === 0;
+    $('schedule-note').textContent = result.scheduleNote;
+    $('schedule-note').hidden = !result.scheduleNote;
     var wanted = result.fields.map(function (f) { return f.id; });
     Array.prototype.forEach.call(document.querySelectorAll('#boxes .box'), function (b) {
       if (wanted.indexOf(b.dataset.field) === -1) b.parentNode.removeChild(b);
