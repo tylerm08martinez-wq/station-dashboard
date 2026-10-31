@@ -119,6 +119,40 @@ html[data-theme="dark"] #loader {
   box-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 
+/* THE IBNO DROP ZONE'S DASHED BORDER IS AN EXCEPTION TO THE NEUTRAL
+   border-color DIRECTLY ABOVE (#1042 / PR #1060, and the browser verify that
+   caught it).
+ *
+ * #drop-zone is not a card whose edge is a hairline divider — it is the only
+ * object on an otherwise empty page, and its 2px dashed outline IS the "drop a
+ * report here" affordance. ibno-coder.html asks for var(--brand-ink) there,
+ * but the group rule above matches #drop-zone with the SAME id plus an extra
+ * attribute and element, so in dark it won on specificity AND source order and
+ * painted #2e2f3c: 1.38:1 against --app-bg #14151b and 1.24:1 against the
+ * zone's own #1e1f29 fill. Effectively no outline. The hardcoded #4D148C the
+ * tool carried before #1042 was overridden by exactly the same rule, so dark
+ * had never once shown the colour either branch asked for.
+ *
+ * --brand-ink is #c4b5fd in dark (declared in ibno-coder.html's inline style,
+ * where brand purple lives because theme.css deliberately does not tokenize it
+ * — see this file's palette header). Recomputed here rather than copied: WCAG
+ * relative luminance puts it at 9.87:1 on --app-bg #14151b and 8.86:1 on the
+ * zone's own #1e1f29 fill. The verify comment's 12.4:1 for the first of those
+ * does not reproduce; its 8.86:1 for the second does, from the same formula,
+ * so the low number is the safe one to quote. Either way it is ~8x the 1.24:1
+ * the zone shipped with.
+ *
+ * SCOPED TO AN ID THAT EXISTS IN ONE TOOL. `grep -l 'drop-zone' *.html` is
+ * ibno-coder.html and nothing else, so this rule is inert everywhere else —
+ * it is here rather than in that tool's inline <style> because this file loads
+ * last and a dark rule written there is silently overridden from here (the
+ * #504 trap, which is what this whole comment is about).
+ *
+ * NOT scoped away from .dragover: the group rule above already beat
+ * `#drop-zone.dragover`'s orange in dark long before this branch, so dark's
+ * drag feedback is a pre-existing gap this does not widen or close. */
+html[data-theme="dark"] #drop-zone { border-color: var(--brand-ink); }
+
 /* Sticky sub-bars that sit on a card and must stay opaque while scrolling. */
 html[data-theme="dark"] .section-header,
 html[data-theme="dark"] .phase-header,

@@ -1391,6 +1391,21 @@
        (issue #300). See AddressCatcherSession.recurringIbnoTrackingIds for
        the data-source rationale (same-browser localStorage). -->
   <script src="lib/ibno-rules.js"></script>
+  <!-- #1003 (spec #996 story 32): a package addressed to the station itself is
+       never a bad address. Two more of the IBNO Coder's libs load here so this
+       tool can answer that question the SAME way the coder does — the station's
+       own facts (station-config) and the per-tracking manual overrides the coder
+       writes (tracking-overrides, read-only here, same origin so literally the
+       same localStorage key). NEITHER IS INFERRED FROM THE COMBINED SCRIPT LIST:
+       #680's lesson is that these two pages' <script> lists differ on purpose
+       (this one still does not load lib/ibno-review-plan.js), so a lib the coder
+       loads is not automatically available here. Deployed by
+       scripts/deploy-dashboard.sh, which AUTO-DISCOVERS assets by grepping these
+       very tags — no deploy list to hand-edit (see
+       tests/address-catcher-hosting-dom.test.js for that mechanism). -->
+  <script src="lib/sort-day.js"></script>
+  <script src="lib/station-config.js"></script>
+  <script src="lib/tracking-overrides.js"></script>
   <script src="lib/address-catcher-session.js"></script>
   <!-- lib/report-freshness.js: pure freshness core (issue #399, ADR-0016
        decision 3). Computes each Standing Report's age from its NEWEST EVENT
@@ -1573,6 +1588,31 @@
     // consistency rule, now threshold-aware per #343).
     function trustOptions() {
       return Object.assign({}, AddressCatcherSession.DEFAULT_TRUST_OPTIONS, { minCount: minCount });
+    }
+
+    // ── Station packages are never bad addresses (#1003, spec #996 story 32) ──
+    //
+    // The two inputs the exclusion needs, read FRESH off localStorage on every
+    // call rather than cached at load: the IBNO Coder is a separate page on the
+    // SAME origin, so Tyler can send a package to Station over there and come
+    // back to a tab this one has had open for an hour. A value captured at page
+    // load would honor his decision only after a refresh.
+    //
+    // READ-ONLY, BOTH OF THEM. This tool never writes an override and never
+    // writes a station config — "Send to Station" and "Not ours" live in the
+    // coder's Station pane (#1000), which is where a decision about a package
+    // in the cage is actually made. A second writer would be a second story of
+    // the same state with no merge rule between them.
+    //
+    // The precedence (override beats predicate, in both directions) is stated
+    // exactly ONCE, in AddressCatcherSession.isStationScan — not here.
+    const stationStorage = ToolHelpers.createStorage();
+    function stationOptions() {
+      if (typeof StationConfig === 'undefined' || typeof TrackingOverrides === 'undefined') return {};
+      return {
+        stationConfig: StationConfig.load(stationStorage.get(StationConfig.STORAGE_KEY, null)),
+        stationOverrides: TrackingOverrides.restore(stationStorage.get(TrackingOverrides.STORAGE_KEY, null)),
+      };
     }
 
     // Same aging/minCount options matchLiveInbound applies (#299/#343) — so
@@ -1766,7 +1806,7 @@
       }
       if (restored.inbound) {
         state.inbound = restored.inbound;
-        const recordCount = AddressCatcherSession.parseInboundRows(restored.inbound).length;
+        const recordCount = AddressCatcherSession.parseInboundRows(restored.inbound, stationOptions()).length;
         setStatus('inbound', true, '✓ restored from this device — ' + recordCount + ' package record(s).');
         // Re-key the done-state to the restored inbound's own sort date, so the
         // handled/dismissed progress from before navigation comes back too.
@@ -2228,7 +2268,7 @@
         // #301 comment finding: report the package RECORD count (header and
         // preamble excluded), not the raw row count — a 2-package report
         // previously read "3 rows".
-        const recordCount = AddressCatcherSession.parseInboundRows(rows).length;
+        const recordCount = AddressCatcherSession.parseInboundRows(rows, stationOptions()).length;
         setStatus(zone, true, '✓ ' + file.name + ' — ' + recordCount + ' package record(s).');
         // Done-state persistence (#357 AC): keyed to the loaded inbound
         // report's OWN sort date (INBOUND_DATE) — reloading the SAME day's
@@ -3661,13 +3701,21 @@
       // promotion/un-promotion is just another input this cache keys off of
       // (see the promote/unPromote handlers below — they call render(), not
       // repaint(), for exactly this reason).
-      const opts = Object.assign({ ibnoHistory: ibnoHistory(), correctionLog: correctionLog }, trustOptions());
+      // #1003: stationOptions() rides the SAME opts object every match path
+      // already takes, so the station exclusion is an input to the cached
+      // pipeline rather than a subtraction applied per surface.
+      const opts = Object.assign({ ibnoHistory: ibnoHistory(), correctionLog: correctionLog },
+        trustOptions(), stationOptions());
       const matches = AddressCatcherSession.matchLiveInbound(dictionary, rows, opts);
       // #358: name-match advisories are computed even with zero trusted
       // matches — an "all clean" summary must not silently swallow an advisory
       // lead. Cached here so both the all-clean early-return check and
       // renderAdvisorySubsection() read the SAME derivation.
-      const advisories = AddressCatcherSession.matchLiveNameAdvisories(dictionary, rows, trustOptions());
+      // #1003: takes the SAME `opts` as matchLiveInbound/matchLiveDemoted, not a
+      // bare trustOptions() — this tier parses the report on its OWN path, so
+      // without the station options it is the one surface a station package can
+      // still reach (and one no `not-station` override could reach back into).
+      const advisories = AddressCatcherSession.matchLiveNameAdvisories(dictionary, rows, opts);
       const advisoryGroups = advisories.length ? AddressMatch.groupNameAdvisories(advisories) : [];
       // Group the worklist by original address (issue #344). Lane membership
       // is re-derived live from these SAME groups every repaint (see LANES) —
@@ -3694,14 +3742,17 @@
       // deliberately does NOT apply (the Misroute Trigger is the Area
       // Dictionary's own evidence bar — see CONTEXT.md's Misroute Trigger).
       const correctionTrks = new Set(matches.map(function (m) { return m.trackingId; }));
-      const areaResults = AddressCatcherSession.matchLiveAreas(areaDictionary, rows, {
+      const areaResults = AddressCatcherSession.matchLiveAreas(areaDictionary, rows, Object.assign({
         excludeTrackingIds: correctionTrks,
         recencyWindowDays: trustOptions().recencyWindowDays,
         // #452: PROMOTED area verdicts ride the same correctionLog into area
         // resolution — a promotion/un-promotion is another input this cache
         // keys off (promote/unPromote call render(), not repaint()).
         correctionLog: correctionLog,
-      });
+        // #1003: the Area Dictionary path has its own record mapping inside
+        // matchLiveAreas, so it takes the same station exclusion — a station
+        // package must not raise a misroute flag or a 999 area suggestion.
+      }, stationOptions()));
       const areaGroups = AreaDictionary.groupAreaMatches(areaResults.matches);
       // #479: attach the WHO/WHEN reassignment evidence behind each flag,
       // re-derived from the in-memory raw MAD rows (USER_NAME lives here, never

@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Writeups — Station 849</title>
+  <!--
+    Writeups (issue #1091, spec #1090). View and wiring only: every rule and
+    every word of the draft comes from lib/writeups.js, and every saved record
+    goes through lib/writeups-store.js (device-local, `writeups:` keys, never
+    synced). This page decides nothing and submits nothing.
+  -->
+  <style>
+    :root {
+      --brand-ink: #4D148C;
+      /* Check-line inks. Page-local tokens: theme.css defines neither name, so
+         the dark values below cannot be overridden from there (PR #504 trap). */
+      --wu-ok-ink: #15803d;
+      --wu-warn-ink: #b45309;
+      --wu-warn-bg: #fff7ed;
+    }
+    html[data-theme="dark"] {
+      --brand-ink: #c4b5fd;
+      --wu-ok-ink: #4ade80;
+      --wu-warn-ink: #fbbf24;
+      --wu-warn-bg: #33270f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    header {
+      background: #4D148C;
+      color: white;
+      padding: 14px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+    .back-link { color: white; opacity: 0.85; text-decoration: none; font-size: 13px; font-weight: 600; }
+    .back-link:hover { opacity: 1; }
+    .header-note { font-size: 12px; opacity: 0.85; }
+
+    .wu-grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 5fr) minmax(340px, 7fr);
+      gap: 20px;
+      align-items: start;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    /* Stacks to one column on a phone. 760px, not 720: a media query counts the
+       scrollbar and layout does not, so pad the breakpoint outward. */
+    @media (max-width: 760px) {
+      body { padding: 12px; }
+      .wu-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .panel-header h2 { font-size: 14px; font-weight: 700; color: var(--brand-ink); text-transform: uppercase; letter-spacing: 0.05em; }
+    .panel-body { padding: 14px 16px; }
+
+    label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    input[type="text"], input[type="date"], input[type="time"], select, textarea {
+      font: inherit;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--field-bg);
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      padding: 7px 9px;
+      min-width: 0;
+    }
+    input:focus, select:focus, textarea:focus, button:focus-visible {
+      outline: 2px solid var(--brand-ink);
+      outline-offset: 1px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-purple { background: #4D148C; color: white; }
+    .btn-purple:hover:not(:disabled) { background: #3a0f6a; }
+    .btn-gray { background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong); }
+    .btn-gray:hover:not(:disabled) { background: var(--hover-soft); }
+    .btn-small { padding: 4px 10px; font-size: 12px; }
+
+    .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+    .row > .grow { flex: 1 1 160px; }
+    .muted { color: var(--text-muted); font-size: 13px; }
+    .error { color: var(--wu-warn-ink); font-size: 13px; font-weight: 600; margin-top: 8px; }
+
+    #admin-select { width: 100%; font-weight: 600; }
+    #add-admin-form { margin-top: 10px; }
+
+    #incident-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+    #incident-form .form-actions { display: flex; gap: 8px; grid-column: 1 / -1; }
+    #incident-form .inc-hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
+    /* A free-text field (a Performance entry) takes the whole row. */
+    #incident-form label.field.field-wide { grid-column: 1 / -1; }
+    #incident-form.editing { outline: 2px dashed var(--brand-ink); outline-offset: 6px; border-radius: 4px; }
+
+    #incident-list { list-style: none; margin-top: 14px; border-top: 1px solid var(--border-soft); }
+    #incident-list li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 2px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    #incident-list li.checked { background: var(--hover-soft); }
+    #incident-list label { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; min-width: 0; }
+    #incident-list input[type="checkbox"] { width: 17px; height: 17px; accent-color: #4D148C; flex: none; }
+    .inc-text { overflow-wrap: anywhere; }
+    .incident-empty { margin-top: 14px; }
+    /* A checkbox field (Protected Sick Time) sits on one line with its label. */
+    label.field.field-check { flex-direction: row; align-items: center; gap: 8px; align-self: center; padding-top: 18px; cursor: pointer; }
+    label.field.field-check input { width: 17px; height: 17px; accent-color: #4D148C; }
+    .pattern-line { margin-top: 12px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 6px; font-size: 13px; color: var(--text); }
+
+    .doc-type { font-size: 13px; font-weight: 700; color: var(--text); }
+    .picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .pick { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 6px; padding: 8px 10px; }
+    .pick dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+    .pick dd { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px; min-height: 1.3em; overflow-wrap: anywhere; }
+    @media (max-width: 460px) { .picks { grid-template-columns: 1fr; } }
+
+    .naming { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; font-size: 13px; }
+    .naming label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .naming .naming-label { color: var(--text-muted); font-weight: 600; }
+
+    .habitual { display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; font-size: 13px; }
+    .habitual label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-weight: 600; }
+    .habitual input { width: 16px; height: 16px; accent-color: #4D148C; }
+    .habitual-note { color: var(--text-muted); font-size: 12px; }
+
+    .not-drafted { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
+    .not-drafted p { padding: 6px 8px; border-left: 3px solid var(--border-strong); background: var(--surface-2); border-radius: 4px; margin-bottom: 4px; }
+
+    .box { margin-bottom: 14px; }
+    .box-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .box-head .box-label { font-weight: 700; font-size: 13px; }
+    .box-head .copy-status { font-size: 12px; color: var(--wu-ok-ink); font-weight: 600; margin-left: auto; }
+    .box textarea { width: 100%; min-height: 120px; resize: vertical; line-height: 1.5; background: var(--field-bg-alt); }
+
+    .draft-hint { padding: 18px; text-align: center; border: 1px dashed var(--border-strong); border-radius: 6px; margin-bottom: 14px; }
+
+    .check-line { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+    .check { display: flex; gap: 6px; align-items: baseline; }
+    .check.ok { color: var(--wu-ok-ink); }
+    .check.warn { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 6px 8px; border-radius: 5px; font-weight: 600; flex-wrap: wrap; }
+    .check .check-msg { flex: 1 1 260px; overflow-wrap: anywhere; }
+    .check .check-fix { flex: 0 0 auto; }
+
+    /* #1096 hand edits: an edited box is marked and gets its own Reset. */
+    .box-head .edited-note { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--wu-warn-ink); }
+    .box.edited textarea { border-color: var(--wu-warn-ink); border-style: dashed; }
+
+    /* #1092: document type, suggestion, history, Save to history */
+    .doc-type-row { display: flex; gap: 8px 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+    .doc-type-row .field { flex: 1 1 220px; }
+    #doc-type-select { width: 100%; font-weight: 600; }
+    .suggestion { margin-bottom: 14px; padding: 8px 10px; border-left: 3px solid var(--brand-ink); background: var(--surface-2); border-radius: 4px; font-size: 13px; font-weight: 600; color: var(--text); }
+    .pick.pick-wide { grid-column: 1 / -1; }
+    .pick dd.pick-none { color: var(--text-muted); font-weight: 600; font-size: 13px; }
+    .history-summary { font-size: 13px; font-weight: 600; color: var(--text); }
+    .history-summary.history-empty { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 8px 10px; border-radius: 5px; }
+    #history-list { list-style: none; margin-top: 10px; border-top: 1px solid var(--border-soft); }
+    #history-list li { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--border-soft); }
+    #history-list .hist-text { flex: 1; overflow-wrap: anywhere; }
+    #history-list .hist-source { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    #history-form { margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+    #history-form .form-title { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .save-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+    .save-row .save-note { font-size: 12px; color: var(--text-muted); }
+    .save-row .save-status { font-size: 13px; font-weight: 600; color: var(--wu-ok-ink); }
+    .save-row .save-status.warn { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 6px 8px; border-radius: 5px; }
+
+    /* #1097: backup panel and the export nudge */
+    .backup-note { margin-bottom: 10px; font-size: 13px; }
+    .backup-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .import-preview { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--wu-warn-ink); background: var(--wu-warn-bg); border-radius: 4px; font-size: 13px; }
+    .import-preview p { margin-bottom: 8px; overflow-wrap: anywhere; }
+    .backup-status { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--wu-ok-ink); overflow-wrap: anywhere; }
+    .backup-status.warn { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 6px 8px; border-radius: 5px; }
+    .export-nudge { font-size: 13px; font-weight: 600; color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 4px 8px; border-radius: 5px; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <a class="back-link" href="dashboard.html">&larr; Dashboard</a>
+    <h1>Writeups</h1>
+  </div>
+  <span class="header-note">Drafts only. Saved on this device, never sent.</span>
+</header>
+
+<p id="store-notice" class="error" role="alert" hidden style="margin:12px 16px">Saved writeup data on this device could not be read. Nothing was changed.</p>
+
+<main class="wu-grid">
+
+  <!-- ── Left: the admin's story ─────────────────────────────────────────── -->
+  <section class="wu-col" aria-label="Admin and incidents">
+    <div class="panel" id="admin-panel">
+      <div class="panel-header"><h2>Admin</h2></div>
+      <div class="panel-body">
+        <label class="field" for="admin-select">Who is this writeup for?
+          <select id="admin-select"></select>
+        </label>
+        <p id="admin-empty" class="muted" style="margin-top:8px" hidden>No admins on this device yet. Add one below.</p>
+        <form id="add-admin-form" class="row" autocomplete="off">
+          <label class="field grow" for="new-admin-name">Add an admin
+            <input type="text" id="new-admin-name" placeholder="Name" spellcheck="false">
+          </label>
+          <button type="submit" class="btn btn-gray" id="add-admin-btn">Add</button>
+        </form>
+        <p id="admin-error" class="error" hidden></p>
+      </div>
+    </div>
+
+    <div class="panel" id="incident-panel">
+      <div class="panel-header"><h2>Incidents</h2><span class="muted">From MyTime</span></div>
+      <div class="panel-body">
+        <form id="incident-form" autocomplete="off">
+          <label class="field" for="inc-date">Shift date
+            <input type="date" id="inc-date">
+          </label>
+          <label class="field" for="inc-kind">Kind
+            <select id="inc-kind"></select>
+          </label>
+          <div id="inc-fields" style="display:contents"></div>
+          <p id="inc-hint" class="muted inc-hint" hidden></p>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-purple" id="inc-submit">Add incident</button>
+            <button type="button" class="btn btn-gray" id="inc-cancel" hidden>Cancel</button>
+          </div>
+        </form>
+        <p id="inc-error" class="error" hidden></p>
+        <ul id="incident-list"></ul>
+        <p id="incident-empty" class="muted incident-empty">No incidents for this admin yet.</p>
+        <p id="pattern-line" class="pattern-line" hidden></p>
+      </div>
+    </div>
+
+    <div class="panel" id="history-panel">
+      <div class="panel-header"><h2>Writeup history</h2><span class="muted">This device only</span></div>
+      <div class="panel-body">
+        <p id="history-summary" class="history-summary"></p>
+        <ul id="history-list"></ul>
+        <form id="history-form" autocomplete="off">
+          <span class="form-title">Add a past writeup from Workday</span>
+          <label class="field" for="hist-date">Date issued
+            <input type="date" id="hist-date">
+          </label>
+          <label class="field" for="hist-type">Document type
+            <select id="hist-type"></select>
+          </label>
+          <label class="field" for="hist-reason">Reason
+            <select id="hist-reason"></select>
+          </label>
+          <div><button type="submit" class="btn btn-gray" id="hist-submit">Add past writeup</button></div>
+        </form>
+        <p id="hist-error" class="error" hidden></p>
+      </div>
+    </div>
+
+    <!-- #1097: the only backup. A cleared work browser erases everything above. -->
+    <div class="panel" id="backup-panel">
+      <div class="panel-header"><h2>Backup</h2><span class="muted" id="last-exported">Never exported</span></div>
+      <div class="panel-body">
+        <p class="muted backup-note">Admins, incidents and writeup history live only in this browser. Export a file and keep it somewhere else.</p>
+        <div class="backup-actions">
+          <button type="button" class="btn btn-purple" id="export-history">Export history</button>
+          <button type="button" class="btn btn-gray" id="import-history">Import history</button>
+          <input type="file" id="import-file" accept=".json,application/json" hidden aria-label="Choose a Writeups backup file to import">
+        </div>
+        <div id="import-preview" class="import-preview" role="alert" hidden>
+          <p id="import-preview-text"></p>
+          <div class="backup-actions">
+            <button type="button" class="btn btn-purple" id="import-confirm">Replace this device's data</button>
+            <button type="button" class="btn btn-gray" id="import-cancel">Cancel</button>
+          </div>
+        </div>
+        <p id="backup-status" class="backup-status" role="status" hidden></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Right: the live draft ───────────────────────────────────────────── -->
+  <section class="wu-col" aria-label="Draft">
+    <div class="panel" id="draft-panel">
+      <div class="panel-header"><h2>Draft</h2><span class="doc-type" id="doc-type"></span></div>
+      <div class="panel-body">
+        <div class="doc-type-row">
+          <label class="field" for="doc-type-select">Document type
+            <select id="doc-type-select"></select>
+          </label>
+        </div>
+        <p id="suggestion" class="suggestion" aria-live="polite"></p>
+        <dl class="picks" id="picks">
+          <div class="pick"><dt>Reason</dt><dd id="pick-reason"></dd></div>
+          <div class="pick" id="pick-rating-row"><dt>Rating</dt><dd id="pick-rating"></dd></div>
+          <div class="pick"><dt>Period start</dt><dd id="pick-start"></dd></div>
+          <div class="pick"><dt>Period end</dt><dd id="pick-end"></dd></div>
+          <div class="pick pick-wide"><dt>Related Disciplinary Actions</dt><dd id="pick-related"></dd></div>
+        </dl>
+        <div class="naming" role="radiogroup" aria-label="Name the admin as">
+          <span class="naming-label">Name them as</span>
+          <label><input type="radio" name="naming" value="first" id="naming-first" checked> First name</label>
+          <label><input type="radio" name="naming" value="admin" id="naming-admin"> "Admin"</label>
+        </div>
+        <div class="habitual" id="habitual-row">
+          <label for="habitual"><input type="checkbox" id="habitual"> Document as habitual</label>
+          <span id="habitual-note" class="habitual-note" hidden></span>
+        </div>
+        <div id="not-drafted" class="not-drafted" hidden></div>
+        <p id="draft-hint" class="muted draft-hint">Check one or more incidents to build the draft.</p>
+        <div id="boxes"></div>
+        <div id="check-line" class="check-line" aria-live="polite"></div>
+        <div class="save-row">
+          <button type="button" class="btn btn-purple" id="save-history" disabled>Save to history</button>
+          <span id="save-status" class="save-status" hidden></span>
+          <span id="export-nudge" class="export-nudge" role="status" hidden>History changed since your last export. <button type="button" class="btn btn-gray btn-small" id="nudge-export">Export history</button></span>
+          <span class="save-note">Copying never saves. Save once the writeup is in Workday.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="lib/tool-helpers.js"></script>
+<!-- Seeds the admin list when run from the repo checkout. The hosted build
+     ships without it, and the page works the same with no roster. -->
+<script src="lib/admins.js"></script>
+<!-- The 30-day pattern counts come from the attendance rules module (ADR 0004),
+     which reads lib/time-off.js. Both load before lib/writeups.js. -->
+<script src="lib/time-off.js"></script>
+<script src="lib/attendance-rules.js"></script>
+<script src="lib/writeups.js"></script>
+<script src="lib/writeups-store.js"></script>
+<script>
+(function () {
+  'use strict';
+  var W = window.Writeups;
+  var store = window.WriteupsStore.createStore(window.localStorage);
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Page state. Not persisted: which incidents are checked and the naming
+  // choice belong to this drafting session only.
+  var state = {
+    adminId: '',
+    checked: new Set(),
+    editingId: '',
+    naming: 'first',
+    // "Document as habitual": off on every load and for every admin. Only a
+    // click on the toggle turns it on; the threshold note never does.
+    habitual: false,
+    // The document type Tyler picked, or null to follow the suggestion from
+    // history. Back to null on an admin change and after Save to history.
+    docType: null,
+    // #1096 hand edits: { fieldId: text }. A box Tyler types in is locked
+    // against regeneration until he presses Reset on it. Page state only:
+    // never saved, and dropped on an admin change and after Save to history,
+    // so one admin's text can never land in another admin's draft.
+    edits: {},
+  };
+
+  function today() { return window.ToolHelpers.isoDate(new Date()); }
+
+  var roster = window.Admins && Array.isArray(window.Admins.ADMINS) ? window.Admins.ADMINS : null;
+  store.seedAdmins(roster);
+
+  function currentAdmin() {
+    return store.admins().filter(function (a) { return a.id === state.adminId; })[0] || null;
+  }
+
+  // ── Admin picker ───────────────────────────────────────────────────────
+  function renderAdmins() {
+    var admins = store.admins();
+    var sel = $('admin-select');
+    if (!admins.some(function (a) { return a.id === state.adminId; })) {
+      var saved = store.selectedAdminId();
+      state.adminId = admins.some(function (a) { return a.id === saved; }) ? saved : (admins[0] ? admins[0].id : '');
+      // #1104 review: falling back to another admin is an admin change, so
+      // one admin's hand edits never land in another's draft.
+      state.edits = {};
+    }
+    sel.textContent = '';
+    admins.forEach(function (a) {
+      var opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name;
+      sel.appendChild(opt);
+    });
+    sel.value = state.adminId;
+    sel.disabled = admins.length === 0;
+    $('admin-empty').hidden = admins.length > 0;
+    var blocked = store.unreadable().length > 0;
+    $('store-notice').hidden = !blocked;
+    setIncidentFormEnabled(admins.length > 0 && !blocked);
+    Array.prototype.forEach.call($('add-admin-form').querySelectorAll('input, button'), function (el) {
+      el.disabled = blocked;
+    });
+    Array.prototype.forEach.call($('history-form').querySelectorAll('input, select, button'), function (el) {
+      el.disabled = blocked || admins.length === 0;
+    });
+  }
+
+  var UNREADABLE_MSG = 'Saved writeup data on this device could not be read. Nothing was changed.';
+
+  $('admin-select').addEventListener('change', function () {
+    state.adminId = this.value;
+    state.checked = new Set();
+    state.docType = null;
+    state.edits = {};
+    showSaveStatus('');
+    setHabitual(false);
+    cancelEdit();
+    store.setSelectedAdminId(state.adminId);
+    renderAll();
+  });
+
+  $('add-admin-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (store.unreadable().length) return showError('admin-error', UNREADABLE_MSG);
+    var input = $('new-admin-name');
+    var name = input.value;
+    if (!name.trim()) return showError('admin-error', 'Type a name first.');
+    var admin = store.addAdmin(name);
+    if (!admin) return showError('admin-error', 'That name is already on the list, or this browser would not save it.');
+    showError('admin-error', '');
+    input.value = '';
+    state.adminId = admin.id;
+    state.checked = new Set();
+    state.docType = null;
+    state.edits = {};
+    showSaveStatus('');
+    setHabitual(false);
+    cancelEdit();
+    store.setSelectedAdminId(admin.id);
+    renderAll();
+  });
+
+  function showError(id, msg) {
+    $(id).textContent = msg;
+    $(id).hidden = !msg;
+  }
+
+  // ── Incident form (built from the kinds the logic module offers) ─────────
+  W.INCIDENT_KINDS.forEach(function (k) {
+    var opt = document.createElement('option');
+    opt.value = k.id;
+    opt.textContent = k.label;
+    $('inc-kind').appendChild(opt);
+  });
+
+  function kindMeta(id) {
+    return W.INCIDENT_KINDS.filter(function (k) { return k.id === id; })[0] || W.INCIDENT_KINDS[0];
+  }
+
+  function renderKindFields(values) {
+    var wrap = $('inc-fields');
+    wrap.textContent = '';
+    var meta = kindMeta($('inc-kind').value);
+    // A kind may carry a one-line hint (the logic module owns the wording).
+    $('inc-hint').textContent = meta.hint || '';
+    $('inc-hint').hidden = !meta.hint;
+    meta.fields.forEach(function (f) {
+      var label = document.createElement('label');
+      label.className = f.type === 'checkbox' ? 'field field-check' : (f.type === 'text' ? 'field field-wide' : 'field');
+      label.htmlFor = 'inc-f-' + f.key;
+      label.appendChild(document.createTextNode(f.label));
+      var input;
+      if (f.type === 'select') {
+        input = document.createElement('select');
+        f.options.forEach(function (o) {
+          var opt = document.createElement('option');
+          opt.value = o.value;
+          opt.textContent = o.label;
+          input.appendChild(opt);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = f.type;
+        if (f.placeholder) input.placeholder = f.placeholder;
+      }
+      input.id = 'inc-f-' + f.key;
+      input.dataset.key = f.key;
+      if (values && values[f.key] != null) {
+        // A checkbox carries its state in .checked; its .value is always "on".
+        if (f.type === 'checkbox') input.checked = !!values[f.key]; else input.value = values[f.key];
+      }
+      if (f.type === 'checkbox') label.insertBefore(input, label.firstChild); else label.appendChild(input);
+      wrap.appendChild(label);
+    });
+  }
+  $('inc-kind').addEventListener('change', function () { renderKindFields(); });
+
+  function setIncidentFormEnabled(on) {
+    Array.prototype.forEach.call($('incident-form').querySelectorAll('input, select, button'), function (el) {
+      el.disabled = !on;
+    });
+  }
+
+  function readIncidentForm() {
+    var inc = { adminId: state.adminId, date: $('inc-date').value, kind: $('inc-kind').value };
+    Array.prototype.forEach.call($('inc-fields').querySelectorAll('input, select'), function (input) {
+      inc[input.dataset.key] = input.type === 'checkbox' ? input.checked : input.value;
+    });
+    if (state.editingId) inc.id = state.editingId;
+    return inc;
+  }
+
+  function resetIncidentForm() {
+    $('inc-date').value = '';
+    renderKindFields();
+  }
+
+  $('incident-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (store.unreadable().length) return showError('inc-error', UNREADABLE_MSG);
+    if (!state.adminId) return showError('inc-error', 'Pick or add an admin first.');
+    var inc = readIncidentForm();
+    var problem = W.validateIncident(inc);
+    if (problem) return showError('inc-error', problem);
+    var dup = store.duplicateOnDay(inc);
+    if (dup) {
+      var who = currentAdmin();
+      // A sick early departure beside a Call-off or NCNS (review round 1):
+      // a shift that was never worked cannot also be left early.
+      var crossSick = (dup.kind === 'sickearly') !== (inc.kind === 'sickearly');
+      return showError('inc-error', (who ? W.firstName(who.name) : 'This admin') + ' already has a ' +
+        kindMeta(dup.kind).label + ' on ' + W.formatDate(dup.date) +
+        (crossSick
+          ? '. A Left early (sick) cannot share a shift date with a Call-off or NCNS. Edit that one instead.'
+          : '. Edit that one instead, so a day is never counted twice.'));
+    }
+    var saved = store.saveIncident(inc);
+    if (!saved) return showError('inc-error', 'This browser would not save the incident.');
+    showError('inc-error', '');
+    cancelEdit();
+    renderAll();
+  });
+
+  function startEdit(inc) {
+    state.editingId = inc.id;
+    $('inc-date').value = inc.date;
+    $('inc-kind').value = inc.kind;
+    renderKindFields(inc);
+    $('inc-submit').textContent = 'Save changes';
+    $('inc-cancel').hidden = false;
+    $('incident-form').classList.add('editing');
+    showError('inc-error', '');
+    $('inc-date').focus();
+  }
+
+  function cancelEdit() {
+    state.editingId = '';
+    $('inc-submit').textContent = 'Add incident';
+    $('inc-cancel').hidden = true;
+    $('incident-form').classList.remove('editing');
+    resetIncidentForm();
+  }
+  $('inc-cancel').addEventListener('click', function () { cancelEdit(); showError('inc-error', ''); });
+
+  // ── Incident list ──────────────────────────────────────────────────────
+  function renderIncidents() {
+    var list = $('incident-list');
+    var incidents = state.adminId ? store.incidents(state.adminId) : [];
+    // Forget checks for incidents that no longer exist.
+    var ids = new Set(incidents.map(function (i) { return i.id; }));
+    state.checked.forEach(function (id) {
+      if (!ids.has(id)) { state.checked.delete(id); setHabitual(false); }
+    });
+
+    list.textContent = '';
+    incidents.forEach(function (inc) {
+      var li = document.createElement('li');
+      li.dataset.id = inc.id;
+      li.className = state.checked.has(inc.id) ? 'checked' : '';
+      var label = document.createElement('label');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.className = 'inc-check';
+      box.checked = state.checked.has(inc.id);
+      box.addEventListener('change', function () {
+        if (box.checked) state.checked.add(inc.id); else state.checked.delete(inc.id);
+        // The label was chosen for the incidents that WERE checked. Any change
+        // to the set (check or uncheck) puts the toggle back off, so "habitual"
+        // chosen for 3 Lates can never ride onto a 1-Late draft.
+        setHabitual(false);
+        li.className = box.checked ? 'checked' : '';
+        renderDraft();
+      });
+      var text = document.createElement('span');
+      text.className = 'inc-text';
+      text.textContent = W.describeIncident(inc);
+      label.appendChild(box);
+      label.appendChild(text);
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn btn-gray btn-small inc-edit';
+      edit.textContent = 'Edit';
+      edit.addEventListener('click', function () { startEdit(inc); });
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-gray btn-small inc-delete';
+      del.textContent = 'Delete';
+      del.addEventListener('click', function () {
+        if (!window.confirm('Delete this incident? ' + W.describeIncident(inc))) return;
+        store.deleteIncident(inc.id);
+        if (state.checked.delete(inc.id)) setHabitual(false);
+        if (state.editingId === inc.id) cancelEdit();
+        renderAll();
+      });
+      li.appendChild(label);
+      li.appendChild(edit);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+    $('incident-empty').hidden = incidents.length > 0;
+  }
+
+  // ── Draft ──────────────────────────────────────────────────────────────
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="naming"]'), function (r) {
+    r.addEventListener('change', function () {
+      if (r.checked) { state.naming = r.value; renderDraft(); }
+    });
+  });
+
+  function setHabitual(on) {
+    state.habitual = !!on;
+    $('habitual').checked = state.habitual;
+  }
+  $('habitual').addEventListener('change', function () {
+    setHabitual(this.checked);
+    renderDraft();
+  });
+
+  function ensureBox(field) {
+    var box = document.querySelector('.box[data-field="' + field.id + '"]');
+    if (box) return box;
+    box = document.createElement('div');
+    box.className = 'box';
+    box.dataset.field = field.id;
+    var head = document.createElement('div');
+    head.className = 'box-head';
+    var label = document.createElement('label');
+    label.className = 'box-label';
+    label.htmlFor = 'box-' + field.id;
+    label.textContent = field.label;
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn btn-purple btn-small copy-btn';
+    copy.dataset.copy = field.id;
+    copy.textContent = 'Copy';
+    var status = document.createElement('span');
+    status.className = 'copy-status';
+    var editedNote = document.createElement('span');
+    editedNote.className = 'edited-note';
+    editedNote.textContent = 'Edited by hand';
+    editedNote.hidden = true;
+    var reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn btn-small reset-btn';
+    reset.dataset.reset = field.id;
+    reset.textContent = 'Reset';
+    reset.title = 'Throw away the hand edit and rebuild this box from the checked incidents';
+    reset.hidden = true;
+    var area = document.createElement('textarea');
+    area.id = 'box-' + field.id;
+    area.spellcheck = true;
+    // #1096: typing locks this box against regeneration until Reset.
+    area.addEventListener('input', function () {
+      state.edits[field.id] = area.value;
+      renderDraft();
+    });
+    reset.addEventListener('click', function () {
+      delete state.edits[field.id];
+      renderDraft();
+    });
+    copy.addEventListener('click', function () {
+      if (!area.value) return;
+      window.ToolHelpers.copyText(area.value).then(function () {
+        status.textContent = 'Copied';
+      }, function () {
+        status.textContent = 'Copy failed. Select the text and copy it by hand.';
+      });
+    });
+    head.appendChild(label);
+    head.appendChild(editedNote);
+    head.appendChild(status);
+    head.appendChild(reset);
+    head.appendChild(copy);
+    box.appendChild(head);
+    box.appendChild(area);
+    $('boxes').appendChild(box);
+    return box;
+  }
+
+  function renderDraft() {
+    var admin = currentAdmin();
+    var result = W.draft({
+      admin: admin || { id: '', name: '' },
+      incidents: admin ? store.incidents(admin.id) : [],
+      checkedIds: Array.from(state.checked),
+      history: admin ? store.history(admin.id) : [],
+      docType: state.docType,
+      habitual: state.habitual,
+      naming: state.naming,
+      today: today(),
+      edits: state.edits,
+    });
+    lastResult = result;
+    // A refusal belongs to the ticks it was shown for: any redraw clears it.
+    if ($('save-status').classList.contains('warn')) showSaveStatus('');
+    $('doc-type').textContent = result.docTypeLabel;
+    $('doc-type-select').value = result.docType || '';
+    $('suggestion').textContent = admin ? result.suggestion.text : '';
+    $('suggestion').hidden = !admin;
+    var related = result.picks.related;
+    $('pick-related').textContent = related ? related.text : 'None recorded';
+    $('pick-related').className = related ? '' : 'pick-none';
+    renderHistory(admin, result.history);
+    $('pick-reason').textContent = result.picks.reason;
+    $('pick-rating').textContent = result.picks.rating;
+    // A Documented Discussion has no Rating in Workday (#1094).
+    $('pick-rating-row').hidden = !!result.docType && !W.DOC_TYPES[result.docType].hasRating;
+    $('pick-start').textContent = result.picks.periodStart;
+    $('pick-end').textContent = result.picks.periodEnd;
+    $('draft-hint').textContent = result.empty
+      ? 'Check one or more incidents to build the draft.'
+      : 'Pick a document type to build the draft.';
+    $('draft-hint').hidden = !result.empty && !!result.docType;
+
+    // The 30-day pattern line: counts only, from the attendance rules module.
+    $('pattern-line').textContent = admin ? result.pattern.text : '';
+    $('pattern-line').hidden = !admin || !result.pattern.text;
+
+    // The toggle shows the state Tyler set; the note sits beside it and never
+    // changes it.
+    $('habitual').checked = result.habitual;
+    $('habitual-note').textContent = result.habitualNote;
+    $('habitual-note').hidden = !result.habitualNote;
+    // A sick-pattern Documented Discussion is habitual by definition (#1094):
+    // there is no toggle to show.
+    $('habitual-row').hidden = !!result.sickPattern;
+
+    var nd = $('not-drafted');
+    nd.textContent = '';
+    result.notDrafted.forEach(function (n) {
+      var p = document.createElement('p');
+      p.dataset.id = n.id;
+      p.textContent = n.message;
+      nd.appendChild(p);
+    });
+    nd.hidden = result.notDrafted.length === 0;
+    var wanted = result.fields.map(function (f) { return f.id; });
+    Array.prototype.forEach.call(document.querySelectorAll('#boxes .box'), function (b) {
+      if (wanted.indexOf(b.dataset.field) === -1) b.parentNode.removeChild(b);
+    });
+    result.fields.forEach(function (f) {
+      var box = ensureBox(f);
+      var area = box.querySelector('textarea');
+      if (area.value !== f.text) {
+        area.value = f.text;
+        box.querySelector('.copy-status').textContent = '';
+      }
+      box.querySelector('.copy-btn').disabled = !f.text;
+      box.classList.toggle('edited', !!f.edited);
+      box.querySelector('.reset-btn').hidden = !f.edited;
+      box.querySelector('.edited-note').hidden = !f.edited;
+    });
+    var line = $('check-line');
+    line.textContent = '';
+    result.checks.forEach(function (c) {
+      var p = document.createElement('div');
+      p.className = 'check ' + (c.ok ? 'ok' : 'warn');
+      p.dataset.check = c.id;
+      var msg = document.createElement('span');
+      msg.className = 'check-msg';
+      msg.textContent = (c.ok ? '✓ ' : '! ') + c.message;
+      p.appendChild(msg);
+      // A check that offers a fix (the wrong-citation sentence swap) gets a
+      // button. Applying it is a hand edit, so the box stays locked. Checks
+      // never block Copy or Save.
+      if (c.fix) {
+        var fixBtn = document.createElement('button');
+        fixBtn.type = 'button';
+        fixBtn.className = 'btn btn-small check-fix';
+        fixBtn.dataset.fix = c.fix.fieldId;
+        fixBtn.textContent = c.fix.label;
+        fixBtn.addEventListener('click', function () {
+          state.edits[c.fix.fieldId] = c.fix.text;
+          renderDraft();
+        });
+        p.appendChild(fixBtn);
+      }
+      line.appendChild(p);
+    });
+    // Stays clickable when Save is refused, so the click can say why.
+    $('save-history').disabled = (!result.saveRecord && !result.saveRefusal) || store.unreadable().length > 0;
+    renderBackup();
+  }
+
+  // ── Document type ──────────────────────────────────────────────────────
+  (function () {
+    var sel = $('doc-type-select');
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'Use the suggestion';
+    sel.appendChild(none);
+    Object.keys(W.DOC_TYPES).forEach(function (id) {
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = W.DOC_TYPES[id].label;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function () {
+      state.docType = sel.value || null;
+      renderDraft();
+    });
+  })();
+
+  // ── Writeup history ────────────────────────────────────────────────────
+  var lastResult = null;
+
+  W.HISTORY_TYPES.forEach(function (t) {
+    var opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.label;
+    $('hist-type').appendChild(opt);
+  });
+  W.REASONS.forEach(function (r) {
+    var opt = document.createElement('option');
+    opt.value = r;
+    opt.textContent = r;
+    $('hist-reason').appendChild(opt);
+  });
+
+  function renderHistory(admin, view) {
+    var summary = $('history-summary');
+    summary.textContent = admin ? view.text : '';
+    summary.className = 'history-summary' + (admin && view.empty ? ' history-empty' : '');
+    var list = $('history-list');
+    list.textContent = '';
+    if (!admin) return;
+    view.entries.forEach(function (e) {
+      var li = document.createElement('li');
+      li.dataset.id = e.id;
+      var t = document.createElement('span');
+      t.className = 'hist-text';
+      t.textContent = e.line;
+      var src = document.createElement('span');
+      src.className = 'hist-source';
+      src.textContent = e.source === 'drafted' ? 'Saved here' : 'From Workday';
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-gray btn-small hist-delete';
+      del.textContent = 'Delete';
+      del.addEventListener('click', function () {
+        if (!window.confirm('Delete this writeup from history on this device? ' + e.line)) return;
+        store.deleteHistory(e.id);
+        showSaveStatus('');
+        renderDraft();
+      });
+      li.appendChild(t);
+      li.appendChild(src);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  // kind 'warn' is a refusal or a failure (warning style); anything else is OK.
+  function showSaveStatus(msg, kind) {
+    $('save-status').textContent = msg;
+    $('save-status').classList.toggle('warn', kind === 'warn' && !!msg);
+    $('save-status').hidden = !msg;
+  }
+
+  $('history-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (store.unreadable().length) return showError('hist-error', UNREADABLE_MSG);
+    if (!state.adminId) return showError('hist-error', 'Pick or add an admin first.');
+    var entry = {
+      adminId: state.adminId,
+      date: $('hist-date').value,
+      docType: $('hist-type').value,
+      reason: $('hist-reason').value,
+      incidentDates: [],
+      source: 'backfill',
+    };
+    var problem = W.validateHistoryEntry(entry, today());
+    if (problem) return showError('hist-error', problem);
+    if (store.duplicateHistory(entry)) {
+      return showError('hist-error', 'That writeup is already in history.');
+    }
+    if (!store.addHistory(entry)) return showError('hist-error', 'This browser would not save the writeup.');
+    showError('hist-error', '');
+    $('hist-date').value = '';
+    renderDraft();
+  });
+
+  // Save to history: the ONLY way a drafted writeup reaches history. Copying
+  // never calls this.
+  $('save-history').addEventListener('click', function () {
+    if (store.unreadable().length) return;
+    var rec = lastResult && lastResult.saveRecord;
+    if (!rec) {
+      if (lastResult && lastResult.saveRefusal) showSaveStatus(lastResult.saveRefusal, 'warn');
+      return;
+    }
+    if (store.duplicateHistory(rec)) {
+      return showSaveStatus('That writeup is already in history.', 'warn');
+    }
+    var saved = store.addHistory(rec);
+    if (!saved) return showSaveStatus('This browser would not save the writeup.', 'warn');
+    // The saved writeup is done: untick its incidents and go back to the
+    // suggestion, so the page now shows where the admin stands next.
+    state.checked = new Set();
+    state.docType = null;
+    state.edits = {};
+    setHabitual(false);
+    renderAll();
+    showSaveStatus('Saved to history: ' + W.DOC_TYPES[saved.docType].label + ', ' + W.formatDate(saved.date) + '.');
+  });
+
+  // ── Backup: export and import (#1097) ─────────────────────────────────
+  // The page only wires buttons. What a valid file is, and whether it may
+  // replace the data on this device, is the store's call (lib/writeups-store.js).
+  var pendingImport = null; // the chosen file's text, held until Tyler confirms
+  var MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+
+  function stampDate(ms) { return W.formatDate(window.ToolHelpers.isoDate(new Date(ms))); }
+
+  function renderBackup() {
+    var info = store.exportInfo();
+    $('last-exported').textContent = info.lastExportedAt ? 'Last exported ' + stampDate(info.lastExportedAt) : 'Never exported';
+    $('export-nudge').hidden = !info.changedSinceExport;
+  }
+
+  function showBackupStatus(msg, kind) {
+    $('backup-status').textContent = msg;
+    $('backup-status').classList.toggle('warn', kind === 'warn' && !!msg);
+    $('backup-status').hidden = !msg;
+  }
+
+  function hideImportPreview() {
+    pendingImport = null;
+    $('import-preview').hidden = true;
+    $('import-preview-text').textContent = '';
+  }
+
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+
+  function exportHistory() {
+    hideImportPreview();
+    showBackupStatus('');
+    var data = store.exportAll();
+    if (!data) {
+      return showBackupStatus('Saved writeup data on this device could not be read, so nothing was exported. A file made now would look like a backup but hold nothing.', 'warn');
+    }
+    var name = 'writeups-backup-' + today() + '.json';
+    // The same check import runs, before the file leaves. A file that would be
+    // refused is still downloaded (a partial backup beats none), but Tyler is
+    // told, and the nudge stays until a file that imports has been saved.
+    var verdict = store.verifyExport(data);
+    try {
+      window.ToolHelpers.downloadTSV(name, JSON.stringify(data, null, 2), 'application/json');
+    } catch (e) {
+      return showBackupStatus('This browser would not download the file. Nothing was exported.', 'warn');
+    }
+    // The browser cannot confirm the save, so this says only what the page did.
+    var started = 'Download started. Check your Downloads folder for ' + name + '.';
+    if (!verdict.ok) {
+      renderBackup();
+      return showBackupStatus(started + ' ' + verdict.message, 'warn');
+    }
+    store.markExported();
+    renderBackup();
+    showBackupStatus(started + ' It holds ' + plural(data.admins.length, 'admin') + ', ' + plural(data.incidents.length, 'incident') +
+      ' and ' + plural(data.history.length, 'history entry', 'history entries') + '. Keep it somewhere other than this browser.');
+  }
+  $('export-history').addEventListener('click', exportHistory);
+  $('nudge-export').addEventListener('click', exportHistory);
+
+  $('import-history').addEventListener('click', function () { $('import-file').click(); });
+
+  $('import-file').addEventListener('change', function () {
+    var input = this;
+    var file = input.files && input.files[0];
+    hideImportPreview();
+    showBackupStatus('');
+    if (!file) return;
+    if (file.size > MAX_IMPORT_BYTES) {
+      input.value = '';
+      return showBackupStatus('That file is too large to be a Writeups backup. Nothing was imported and nothing was changed.', 'warn');
+    }
+    var reader = new FileReader();
+    reader.onerror = function () {
+      input.value = '';
+      showBackupStatus('This browser could not read that file. Nothing was imported and nothing was changed.', 'warn');
+    };
+    reader.onload = function () {
+      // Cleared only after the read, so choosing the same file again works.
+      input.value = '';
+      var text = String(reader.result == null ? '' : reader.result);
+      var info = store.inspectImport(text);
+      if (!info.ok) return showBackupStatus(info.message, 'warn');
+      pendingImport = text;
+      $('import-preview-text').textContent = 'This file holds ' + plural(info.counts.admins, 'admin') + ', ' +
+        plural(info.counts.incidents, 'incident') + ' and ' + plural(info.counts.history, 'history entry', 'history entries') +
+        ', exported ' + stampDate(Date.parse(info.exportedAt)) + '. Importing replaces everything saved on this device. ' +
+        'Nothing is merged, and anything not in the file is gone.';
+      $('import-preview').hidden = false;
+    };
+    reader.readAsText(file);
+  });
+
+  $('import-cancel').addEventListener('click', function () {
+    hideImportPreview();
+    showBackupStatus('Import cancelled. Nothing was changed.');
+  });
+
+  $('import-confirm').addEventListener('click', function () {
+    var text = pendingImport;
+    hideImportPreview();
+    if (text == null) return;
+    var res = store.importAll(text);
+    if (!res.ok) return showBackupStatus(res.message, 'warn');
+    // The data under every open view just changed: drop all page state.
+    state.adminId = '';
+    state.checked = new Set();
+    state.docType = null;
+    state.edits = {};
+    cancelEdit();
+    showError('inc-error', '');
+    showError('hist-error', '');
+    showError('admin-error', '');
+    setHabitual(false);
+    showSaveStatus('');
+    renderAll();
+    showBackupStatus(res.message + ' This device now matches the file.');
+  });
+
+  function renderAll() {
+    renderAdmins();
+    renderIncidents();
+    renderDraft();
+  }
+
+  renderKindFields();
+  renderAll();
+})();
+</script>
+</body>
+</html>
