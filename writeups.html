@@ -234,6 +234,30 @@
     .import-preview p { margin-bottom: 8px; overflow-wrap: anywhere; }
     .backup-status { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--wu-ok-ink); overflow-wrap: anywhere; }
     .backup-status.warn { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 6px 8px; border-radius: 5px; }
+    /* #1116: Settings. Existing tokens only, so light and dark both follow theme.css. */
+    details.settings-panel > summary { list-style: none; cursor: pointer; }
+    details.settings-panel > summary::-webkit-details-marker { display: none; }
+    details.settings-panel > summary h2::before { content: '\25B8  '; }
+    details.settings-panel[open] > summary h2::before { content: '\25BE  '; }
+    .settings-fixed { margin-bottom: 12px; font-size: 12px; }
+    .set-section { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border-soft); }
+    .set-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .set-section h3 { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .set-sentence { margin-bottom: 12px; }
+    .set-sentence textarea { width: 100%; min-height: 64px; resize: vertical; line-height: 1.45; margin-top: 4px; }
+    .set-sentence .set-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+    .set-ph { font-size: 12px; color: var(--text-muted); }
+    .set-default-note { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--wu-warn-ink); }
+    .set-list { list-style: none; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+    .set-list li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 9px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 5px; overflow-wrap: anywhere; }
+    .set-list li.builtin { padding-right: 9px; color: var(--text-muted); }
+    .set-builtin { margin-top: 8px; font-size: 12px; }
+    .set-builtin summary { cursor: pointer; color: var(--text-muted); font-weight: 600; }
+    .set-builtin p { margin-top: 6px; overflow-wrap: anywhere; }
+    .set-warn { font-size: 12px; color: var(--wu-warn-ink); margin-bottom: 6px; }
+    .set-msg { font-size: 13px; font-weight: 600; margin-top: 6px; color: var(--wu-ok-ink); overflow-wrap: anywhere; }
+    .set-msg.warn { color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 6px 8px; border-radius: 5px; }
+    #set-sickmin { width: 80px; }
     .export-nudge { font-size: 13px; font-weight: 600; color: var(--wu-warn-ink); background: var(--wu-warn-bg); padding: 4px 8px; border-radius: 5px; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   </style>
   <link rel="stylesheet" href="theme.css">
@@ -251,6 +275,12 @@
 </header>
 
 <p id="store-notice" class="error" role="alert" hidden style="margin:12px 16px">Saved writeup data on this device could not be read. Nothing was changed.</p>
+<!-- #1119: damaged Settings never block admins, incidents, history or Export.
+     Drafts use the default Settings until Tyler resets them. -->
+<div id="settings-notice" class="error" role="alert" hidden style="margin:12px 16px">
+  <span>The saved Settings on this device could not be read. Drafts use the default Settings, and Export leaves Settings out. Admins, incidents and history are not affected.</span>
+  <button type="button" class="btn btn-gray btn-small" id="settings-reset">Reset settings</button>
+</div>
 
 <main class="wu-grid">
 
@@ -269,6 +299,11 @@
           </label>
           <button type="submit" class="btn btn-gray" id="add-admin-btn">Add</button>
         </form>
+        <div id="people-suggest" class="muted" style="margin-top:8px" hidden>
+          <span>On the People list, not here yet:</span>
+          <span id="people-suggest-list"></span>
+        </div>
+        <p class="muted" style="margin-top:6px"><a href="people.html" id="edit-people-link">Edit people</a></p>
         <fieldset class="workdays" id="workdays" aria-describedby="workdays-hint">
           <legend>Scheduled days</legend>
           <div class="workdays-row">
@@ -352,6 +387,80 @@
         <p id="backup-status" class="backup-status" role="status" hidden></p>
       </div>
     </div>
+
+    <!-- #1116: wording and word lists Tyler changes himself. Saved on this
+         device, in the backup, and handed to the draft as input. Every rule
+         about what may be saved is lib/writeups.js's (checkSettings). -->
+    <details class="panel settings-panel" id="settings-panel">
+      <summary class="panel-header" id="settings-summary"><h2>Settings</h2><span class="muted">Wording and word lists</span></summary>
+      <div class="panel-body">
+        <p id="settings-fixed" class="muted settings-fixed"></p>
+
+        <div class="set-section" id="set-naming-section">
+          <h3>Naming</h3>
+          <label class="field" for="set-naming">Name the admin as, when the page opens
+            <select id="set-naming">
+              <option value="first">First name</option>
+              <option value="admin">"Admin"</option>
+            </select>
+          </label>
+          <p id="set-naming-msg" class="set-msg" role="status" hidden></p>
+        </div>
+
+        <div class="set-section" id="set-sentences"><h3>Sentences</h3></div>
+
+        <div class="set-section" id="set-medical-section">
+          <h3>Extra medical words</h3>
+          <p class="muted set-warn">Added words warn on every draft, like the built-in ones. The built-in list cannot be shortened.</p>
+          <form class="row" id="set-medical-form" autocomplete="off">
+            <label class="field grow" for="set-medical-input">Add a word (a * at the end matches any ending)
+              <input type="text" id="set-medical-input" spellcheck="false">
+            </label>
+            <button type="submit" class="btn btn-gray" id="set-medical-add">Add</button>
+          </form>
+          <ul class="set-list" id="set-medical-list"></ul>
+          <details class="set-builtin"><summary>Built-in words (cannot be removed)</summary><p id="set-medical-builtin"></p></details>
+          <p id="set-medical-msg" class="set-msg" role="status" hidden></p>
+        </div>
+
+        <div class="set-section" id="set-phrase-section">
+          <h3>Station phrases that should not warn</h3>
+          <p class="set-warn">These phrases never warn, so each one turns the medical check off for that exact phrase. Exact phrases of two or more words only. A medical word on its own cannot be added.</p>
+          <form class="row" id="set-phrase-form" autocomplete="off">
+            <label class="field grow" for="set-phrase-input">Add a phrase
+              <input type="text" id="set-phrase-input" spellcheck="false">
+            </label>
+            <button type="submit" class="btn btn-gray" id="set-phrase-add">Add</button>
+          </form>
+          <ul class="set-list" id="set-phrase-list"></ul>
+          <p id="set-phrase-msg" class="set-msg" role="status" hidden></p>
+        </div>
+
+        <div class="set-section" id="set-reason-section">
+          <h3>Extra Workday Reason values</h3>
+          <p class="muted set-warn">Added to the Reason list for past writeups and history, after the built-in ones.</p>
+          <form class="row" id="set-reason-form" autocomplete="off">
+            <label class="field grow" for="set-reason-input">Add a Reason, as Workday spells it
+              <input type="text" id="set-reason-input" spellcheck="false">
+            </label>
+            <button type="submit" class="btn btn-gray" id="set-reason-add">Add</button>
+          </form>
+          <ul class="set-list" id="set-reason-list"></ul>
+          <p id="set-reason-msg" class="set-msg" role="status" hidden></p>
+        </div>
+
+        <div class="set-section" id="set-sickmin-section">
+          <h3>Sick-pattern minimum</h3>
+          <form class="row" id="set-sickmin-form" autocomplete="off">
+            <label class="field" for="set-sickmin">Sick early departures a sick-pattern Documented Discussion needs (never below 2)
+              <input type="number" id="set-sickmin" min="2" max="10" step="1">
+            </label>
+            <button type="submit" class="btn btn-gray" id="set-sickmin-save">Save</button>
+          </form>
+          <p id="set-sickmin-msg" class="set-msg" role="status" hidden></p>
+        </div>
+      </div>
+    </details>
   </section>
 
   <!-- ── Right: the live draft ───────────────────────────────────────────── -->
@@ -402,6 +511,9 @@
 <!-- Seeds the admin list when run from the repo checkout. The hosted build
      ships without it, and the page works the same with no roster. -->
 <script src="lib/admins.js"></script>
+<!-- The shared People list (#1117). Seeds a fresh device and offers its
+     admins as one-click Add buttons. Optional: the page works without it. -->
+<script src="lib/people.js"></script>
 <!-- The 30-day pattern counts come from the attendance rules module (ADR 0004),
      which reads lib/time-off.js. Both load before lib/writeups.js. -->
 <script src="lib/time-off.js"></script>
@@ -415,13 +527,14 @@
   var store = window.WriteupsStore.createStore(window.localStorage);
   var $ = function (id) { return document.getElementById(id); };
 
-  // Page state. Not persisted: which incidents are checked and the naming
-  // choice belong to this drafting session only.
+  // Page state. Not persisted: which incidents are checked belong to this
+  // drafting session only. The naming choice starts from Settings (#1116),
+  // and changing it is remembered there.
   var state = {
     adminId: '',
     checked: new Set(),
     editingId: '',
-    naming: 'first',
+    naming: store.settings().naming,
     // "Document as habitual": off on every load and for every admin. Only a
     // click on the toggle turns it on; the threshold note never does.
     habitual: false,
@@ -437,8 +550,23 @@
 
   function today() { return window.ToolHelpers.isoDate(new Date()); }
 
-  var roster = window.Admins && Array.isArray(window.Admins.ADMINS) ? window.Admins.ADMINS : null;
-  store.seedAdmins(roster);
+  var fallbackRoster = window.Admins && Array.isArray(window.Admins.ADMINS) ? window.Admins.ADMINS : [];
+  // First load only (seedAdmins is a no-op once this device has an admin list):
+  // the People list's admins, else lib/admins.js exactly as before.
+  var roster = window.People && typeof window.People.adminNames === 'function'
+    ? window.People.adminNames(window.localStorage, fallbackRoster).names
+    : fallbackRoster;
+  store.seedAdmins(roster && roster.length ? roster : null);
+
+  // People-list admins this page does not have yet. Never added automatically.
+  function peopleSuggestions() {
+    if (!window.People || typeof window.People.adminNames !== 'function') return [];
+    var picked = window.People.adminNames(window.localStorage, null);
+    if (picked.source !== 'people' || !picked.names) return [];
+    var have = {};
+    store.admins().forEach(function (a) { have[a.name.trim().toLowerCase()] = true; });
+    return picked.names.filter(function (n) { return !have[String(n).trim().toLowerCase()]; });
+  }
 
   function currentAdmin() {
     return store.admins().filter(function (a) { return a.id === state.adminId; })[0] || null;
@@ -475,6 +603,19 @@
       el.disabled = blocked || admins.length === 0;
     });
     renderWorkDays(blocked);
+    var box = $('people-suggest-list');
+    box.textContent = '';
+    var names = blocked ? [] : peopleSuggestions();
+    names.forEach(function (n) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-gray people-suggest-btn';
+      b.style.marginLeft = '6px';
+      b.textContent = 'Add ' + n;
+      b.addEventListener('click', function () { addAdminByName(n); });
+      box.appendChild(b);
+    });
+    $('people-suggest').hidden = names.length === 0;
   }
 
   // Scheduled days (#1112): the seven boxes show the picked admin's saved
@@ -525,10 +666,14 @@
     var input = $('new-admin-name');
     var name = input.value;
     if (!name.trim()) return showError('admin-error', 'Type a name first.');
+    if (addAdminByName(name)) input.value = '';
+  });
+
+  function addAdminByName(name) {
+    if (store.unreadable().length) { showError('admin-error', UNREADABLE_MSG); return false; }
     var admin = store.addAdmin(name);
-    if (!admin) return showError('admin-error', 'That name is already on the list, or this browser would not save it.');
+    if (!admin) { showError('admin-error', 'That name is already on the list, or this browser would not save it.'); return false; }
     showError('admin-error', '');
-    input.value = '';
     state.adminId = admin.id;
     state.checked = new Set();
     state.docType = null;
@@ -538,7 +683,8 @@
     cancelEdit();
     store.setSelectedAdminId(admin.id);
     renderAll();
-  });
+    return true;
+  }
 
   function showError(id, msg) {
     $(id).textContent = msg;
@@ -723,7 +869,13 @@
   // ── Draft ──────────────────────────────────────────────────────────────
   Array.prototype.forEach.call(document.querySelectorAll('input[name="naming"]'), function (r) {
     r.addEventListener('change', function () {
-      if (r.checked) { state.naming = r.value; renderDraft(); }
+      if (r.checked) {
+        state.naming = r.value;
+        // Remembered across loads (#1116). A refused save (unreadable data)
+        // still names them as picked for this session.
+        saveSetting({ action: 'setNaming', value: r.value }, 'set-naming-msg', true);
+        renderAll();
+      }
     });
   });
 
@@ -809,6 +961,7 @@
       naming: state.naming,
       today: today(),
       edits: state.edits,
+      settings: store.settings(),
     });
     lastResult = result;
     // A refusal belongs to the ticks it was shown for: any redraw clears it.
@@ -932,12 +1085,19 @@
     opt.textContent = t.label;
     $('hist-type').appendChild(opt);
   });
-  W.REASONS.forEach(function (r) {
-    var opt = document.createElement('option');
-    opt.value = r;
-    opt.textContent = r;
-    $('hist-reason').appendChild(opt);
-  });
+  // The Reason list: built-in values, then the extra ones in Settings (#1116).
+  function renderReasons() {
+    var sel = $('hist-reason');
+    var keep = sel.value;
+    sel.textContent = '';
+    W.reasonsFor(store.settings()).forEach(function (r) {
+      var opt = document.createElement('option');
+      opt.value = r;
+      opt.textContent = r;
+      sel.appendChild(opt);
+    });
+    if (keep && Array.prototype.some.call(sel.options, function (o) { return o.value === keep; })) sel.value = keep;
+  }
 
   function renderHistory(admin, view) {
     var summary = $('history-summary');
@@ -991,7 +1151,7 @@
       incidentDates: [],
       source: 'backfill',
     };
-    var problem = W.validateHistoryEntry(entry, today());
+    var problem = W.validateHistoryEntry(entry, today(), store.settings());
     if (problem) return showError('hist-error', problem);
     if (store.duplicateHistory(entry)) {
       return showError('hist-error', 'That writeup is already in history.');
@@ -1080,7 +1240,8 @@
     store.markExported();
     renderBackup();
     showBackupStatus(started + ' It holds ' + plural(data.admins.length, 'admin') + ', ' + plural(data.incidents.length, 'incident') +
-      ' and ' + plural(data.history.length, 'history entry', 'history entries') + '. Keep it somewhere other than this browser.');
+      ' and ' + plural(data.history.length, 'history entry', 'history entries') + '. Keep it somewhere other than this browser.' +
+      (data.settingsNote ? ' ' + data.settingsNote : ''), data.settingsNote ? 'warn' : undefined);
   }
   $('export-history').addEventListener('click', exportHistory);
   $('nudge-export').addEventListener('click', exportHistory);
@@ -1129,11 +1290,18 @@
     if (text == null) return;
     var res = store.importAll(text);
     if (!res.ok) return showBackupStatus(res.message, 'warn');
+    // The sentence boxes show the imported Settings, not what was typed before (#1119).
+    W.SETTINGS_SENTENCES.forEach(function (meta) {
+      $('set-s-' + meta.id).dataset.dirty = '';
+      showSetMsg('set-s-' + meta.id + '-msg', '');
+    });
     // The data under every open view just changed: drop all page state.
     state.adminId = '';
     state.checked = new Set();
     state.docType = null;
     state.edits = {};
+    // A format 2 backup brings its Settings, the naming choice among them.
+    state.naming = store.settings().naming;
     cancelEdit();
     showError('inc-error', '');
     showError('hist-error', '');
@@ -1144,8 +1312,196 @@
     showBackupStatus(res.message + ' This device now matches the file.');
   });
 
+  // ── Settings (#1116) ──────────────────────────────────────────────────
+  // The page wires controls only: lib/writeups.js decides what a change may
+  // be (changeSettings), and the store refuses to save anything else.
+  function showSetMsg(id, msg, kind) {
+    $(id).textContent = msg;
+    $(id).classList.toggle('warn', kind === 'warn' && !!msg);
+    $(id).hidden = !msg;
+  }
+
+  // saveSetting(change, msgId, quiet) -> true when saved. A refusal shows
+  // why and changes nothing.
+  function saveSetting(change, msgId, quiet) {
+    var res = W.changeSettings(store.settings(), change);
+    if (!res.ok) { showSetMsg(msgId, res.message, 'warn'); return false; }
+    var saved = store.saveSettings(res.settings);
+    if (!saved.ok) { showSetMsg(msgId, saved.message, 'warn'); return false; }
+    showSetMsg(msgId, quiet ? '' : 'Saved.');
+    return true;
+  }
+
+  $('settings-fixed').textContent = W.SETTINGS_FIXED_NOTE;
+
+  // Unreadable Settings (#1119): Reset rewrites only writeups:settings, after
+  // a confirm. Nothing else on the device is touched.
+  $('settings-reset').addEventListener('click', function () {
+    if (!window.confirm('Reset Settings to the defaults? The unreadable saved Settings are replaced. Admins, incidents and history are not changed.')) return;
+    if (!store.resetSettings()) {
+      $('settings-notice').querySelector('span').textContent = 'This browser would not reset the Settings. Nothing was changed.';
+      return;
+    }
+    state.naming = store.settings().naming;
+    W.SETTINGS_SENTENCES.forEach(function (meta) { $('set-s-' + meta.id).dataset.dirty = ''; });
+    renderAll();
+  });
+
+  W.SETTINGS_SENTENCES.forEach(function (meta) {
+    var wrap = document.createElement('div');
+    wrap.className = 'set-sentence';
+    wrap.dataset.sentence = meta.id;
+    var label = document.createElement('label');
+    label.className = 'field';
+    label.htmlFor = 'set-s-' + meta.id;
+    label.textContent = meta.label;
+    var ph = document.createElement('span');
+    ph.className = 'set-ph';
+    ph.id = 'set-s-' + meta.id + '-ph';
+    ph.textContent = meta.placeholders.length
+      ? 'Placeholders: ' + meta.placeholders.join(', ') + '.' +
+        (meta.placeholders.indexOf('{name}') !== -1 ? ' {name} is the first name or "Admin".' : '') +
+        (meta.placeholders.indexOf('{days}') !== -1 ? ' {days} is the scheduled days, like Sun-Thu.' : '')
+      : 'No placeholders.';
+    var area = document.createElement('textarea');
+    area.id = 'set-s-' + meta.id;
+    area.spellcheck = true;
+    var actions = document.createElement('div');
+    actions.className = 'set-actions';
+    var save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-gray btn-small';
+    save.dataset.sentenceSave = meta.id;
+    save.textContent = 'Save';
+    var reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn btn-gray btn-small';
+    reset.dataset.sentenceReset = meta.id;
+    reset.textContent = 'Reset to default';
+    var changed = document.createElement('span');
+    changed.className = 'set-default-note';
+    changed.textContent = 'Changed from the default';
+    var msg = document.createElement('p');
+    msg.className = 'set-msg';
+    msg.id = 'set-s-' + meta.id + '-msg';
+    msg.setAttribute('role', 'status');
+    msg.hidden = true;
+    save.addEventListener('click', function () {
+      if (saveSetting({ action: 'setSentence', id: meta.id, value: area.value }, msg.id)) {
+        area.dataset.dirty = '';
+        renderAll();
+      }
+    });
+    reset.addEventListener('click', function () {
+      if (saveSetting({ action: 'resetSentence', id: meta.id }, msg.id)) {
+        area.dataset.dirty = '';
+        showSetMsg(msg.id, 'Back to the default.');
+        renderAll();
+      }
+    });
+    // A typed, unsaved sentence stays in its box until Save or Reset.
+    area.addEventListener('input', function () { area.dataset.dirty = '1'; });
+    actions.appendChild(save);
+    actions.appendChild(reset);
+    actions.appendChild(changed);
+    wrap.appendChild(label);
+    wrap.appendChild(ph);
+    wrap.appendChild(area);
+    wrap.appendChild(actions);
+    wrap.appendChild(msg);
+    $('set-sentences').appendChild(wrap);
+  });
+
+  // The three lists: one form, the added entries (each with Remove), and the
+  // built-in entries shown without a Remove button. Medical words show their
+  // built-in list in a fold of its own, since it is long.
+  var SET_LISTS = [
+    { key: 'extraMedicalWords', prefix: 'set-medical', add: 'addMedicalWord', remove: 'removeMedicalWord' },
+    { key: 'stationPhrases', prefix: 'set-phrase', add: 'addStationPhrase', remove: 'removeStationPhrase', builtIn: W.STATION_TERMS },
+    { key: 'extraReasons', prefix: 'set-reason', add: 'addReason', remove: 'removeReason', builtIn: W.REASONS },
+  ];
+  $('set-medical-builtin').textContent = W.MEDICAL_LANGUAGE.concat(W.MEDICAL_ABBREVIATIONS).join(', ') +
+    '. On a sick-related draft also: ' + W.SICK_REASON_LANGUAGE.join(', ') + '.';
+  SET_LISTS.forEach(function (l) {
+    $(l.prefix + '-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = $(l.prefix + '-input');
+      if (saveSetting({ action: l.add, value: input.value }, l.prefix + '-msg')) {
+        input.value = '';
+        renderAll();
+      }
+    });
+  });
+
+  $('set-naming').addEventListener('change', function () {
+    if (saveSetting({ action: 'setNaming', value: this.value }, 'set-naming-msg')) {
+      state.naming = this.value;
+      renderAll();
+    }
+  });
+
+  $('set-sickmin-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var raw = $('set-sickmin').value.trim();
+    var n = raw === '' ? NaN : Number(raw);
+    if (saveSetting({ action: 'setSickPatternMin', value: n }, 'set-sickmin-msg')) renderAll();
+  });
+
+  function renderSettings() {
+    var cfg = store.settings();
+    var settingsBad = store.settingsUnreadable();
+    var blocked = store.unreadable().length > 0 || settingsBad;
+    $('settings-notice').hidden = !settingsBad;
+    $('set-naming').value = cfg.naming;
+    W.SETTINGS_SENTENCES.forEach(function (meta) {
+      var wrap = document.querySelector('.set-sentence[data-sentence="' + meta.id + '"]');
+      var area = $('set-s-' + meta.id);
+      if (!area.dataset.dirty) area.value = W.sentenceText(cfg, meta.id);
+      wrap.querySelector('.set-default-note').hidden = !Object.prototype.hasOwnProperty.call(cfg.sentences, meta.id);
+    });
+    SET_LISTS.forEach(function (l) {
+      var list = $(l.prefix + '-list');
+      list.textContent = '';
+      (l.builtIn || []).forEach(function (v) {
+        var li = document.createElement('li');
+        li.className = 'builtin';
+        li.textContent = v;
+        li.title = 'Built in. It cannot be removed.';
+        list.appendChild(li);
+      });
+      cfg[l.key].forEach(function (v) {
+        var li = document.createElement('li');
+        li.className = 'added';
+        li.dataset.value = v;
+        var span = document.createElement('span');
+        span.textContent = v;
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn-gray btn-small set-remove';
+        rm.textContent = 'Remove';
+        rm.setAttribute('aria-label', 'Remove ' + v);
+        rm.addEventListener('click', function () {
+          if (saveSetting({ action: l.remove, value: v }, l.prefix + '-msg')) renderAll();
+        });
+        li.appendChild(span);
+        li.appendChild(rm);
+        list.appendChild(li);
+      });
+    });
+    if (document.activeElement !== $('set-sickmin')) $('set-sickmin').value = String(cfg.sickPatternMin);
+    // Unreadable saved data: every write is refused, so every control is off.
+    Array.prototype.forEach.call($('settings-panel').querySelectorAll('input, select, textarea, button'), function (el) {
+      el.disabled = blocked;
+    });
+    // The draft's naming radios show the choice in use.
+    $('naming-first').checked = state.naming !== 'admin';
+    $('naming-admin').checked = state.naming === 'admin';
+  }
+
   function renderAll() {
     renderAdmins();
+    renderReasons();
+    renderSettings();
     renderIncidents();
     renderDraft();
   }
