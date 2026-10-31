@@ -1155,6 +1155,7 @@
     <div>
       <h1>Address Catcher</h1>
       <a class="back-link" href="./">&larr; Dashboard</a>
+      <a class="back-link" href="people.html" id="edit-people-link" style="margin-left:10px">Edit people</a>
     </div>
     <div style="display:flex; align-items:center; gap:12px;">
       <span id="sync-status" class="sync-status" title="Correction Log sync status — only the reject log syncs; reports and the dictionary stay on this device"></span>
@@ -1376,6 +1377,11 @@
        page degrades to the raw-ID behavior when the module is absent (the
        hosted/capture build never has it). -->
   <script src="lib/employee-roster.js"></script>
+  <!-- lib/people.js (#1117): the People list Tyler edits on people.html.
+       When anyone on it has an Employee ID, the "Made by" line resolves IDs against
+       it; when nobody does (or it cannot be read) the page falls back to
+       lib/employee-roster.js exactly as before. Carries no names; ships. -->
+  <script src="lib/people.js"></script>
   <!-- lib/area-dictionary.js (issue #451, slice 5 of #446): the standalone
        Area Dictionary — address -> Mainly Assigned Area keyed on street +
        ZIP5, learned from the SAME Manual Assignment Detail drop but into its
@@ -3153,12 +3159,26 @@
     // guessed name — it shows the raw ID plus an explicit "not in roster"
     // marker, so a stale/unmapped ID reads as "unresolved", not "unknown
     // person named nothing".
+    //
+    // The People list (#1117) comes first: when anyone on it has an Employee ID
+    // it IS the roster, so an ID it does not carry is "not in roster" even if the
+    // code roster knows it. When nobody has one or it cannot be read, the code below
+    // the People branch runs exactly as it did before the list existed.
     function historyEmpLabel(emp) {
       if (!emp) return '(no employee ID recorded)';
+      const fromPeople = (typeof People !== 'undefined' && People && typeof People.lookupEmployee === 'function')
+        ? People.lookupEmployee(window.localStorage, emp)
+        : { useFallback: true };
+      if (!fromPeople.useFallback) return historyPersonLabel(emp, fromPeople.person);
       if (typeof EmployeeRoster === 'undefined' || !EmployeeRoster || typeof EmployeeRoster.resolve !== 'function') {
         return 'Emp #' + esc(emp);
       }
-      const person = EmployeeRoster.resolve(emp);
+      return historyPersonLabel(emp, EmployeeRoster.resolve(emp));
+    }
+
+    // historyPersonLabel(emp, person) -> the label for a resolved person
+    // ({ name, mine, manager }) or for null (an ID the roster lacks).
+    function historyPersonLabel(emp, person) {
       if (!person) {
         return 'Emp #' + esc(emp) + ' <span class="history-emp-unmapped">not in roster</span>';
       }

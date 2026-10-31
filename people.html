@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>People — Station 849</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4D148C">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <style>
+    :root { --brand-ink: #4D148C; --stop: #b91c1c; }
+    html[data-theme="dark"] { --brand-ink: #c4b5fd; --stop: #f87171; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--app-bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    header {
+      background: #4D148C; color: #fff;
+      padding: 14px 20px; border-radius: 8px; margin-bottom: 20px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    .back-link { color: #fff; opacity: .85; text-decoration: none; font-size: 13px; font-weight: 600; }
+    .back-link:hover { opacity: 1; }
+    main { max-width: 860px; margin: 0 auto; display: grid; gap: 16px; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 20px;
+    }
+    .panel h2 { font-size: 15px; margin-bottom: 10px; color: var(--brand-ink); }
+    .lede { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .notice {
+      border-left: 4px solid var(--stop); background: var(--surface);
+      border-radius: 6px; padding: 12px 16px; font-size: 13px; line-height: 1.5;
+    }
+    .notice b { color: var(--stop); }
+    form .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    .field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 160px; min-width: 0; }
+    .field label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .field input, .field select {
+      padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 5px;
+      background: var(--field-bg); color: var(--text); font: inherit; font-size: 14px;
+    }
+    .check { display: flex; align-items: center; gap: 6px; font-size: 13px; padding-top: 18px; }
+    .btn {
+      padding: 7px 14px; border-radius: 5px; border: 1px solid transparent;
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .btn-primary { background: #4D148C; color: #fff; }
+    .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
+    .btn-danger { background: transparent; color: var(--stop); border-color: var(--border-strong); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .msg { font-size: 12px; font-weight: 600; }
+    .msg.err { color: var(--stop); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    td { padding: 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+    tr.editing td { background: var(--hover-soft); }
+    .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border-strong); }
+    .pill.admin { border-color: #4D148C; color: var(--brand-ink); }
+    .muted { color: var(--text-faint); }
+    td.row-actions { white-space: nowrap; text-align: right; }
+    .count { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-left: 6px; }
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+  <script src="lib/theme.js"></script>
+</head>
+<body>
+<header>
+  <a class="back-link" href="./">&larr; Dashboard</a>
+  <h1>People</h1>
+</header>
+
+<main>
+  <p class="lede">One list of admins and staff for every tool. The Time-Off Log fills its Admin field from the admins here, and Address Catcher uses the employee IDs to name who made a correction. The list stays in this browser and is shared by every tool on this site. Use Export to keep a copy or move it to another device.</p>
+
+  <div class="notice" id="people-unreadable" hidden>
+    <b>The People list in this browser cannot be read.</b> It was saved by a newer version of this page, or it is damaged. Nothing is shown and nothing is saved over it. The other tools use their built-in lists until it is fixed. Open the newest version of this page, or replace it with a backup. Replacing first saves a copy of the unreadable text to your Downloads, so nothing is lost.
+    <div class="actions" style="margin-top:10px">
+      <label class="btn btn-ghost" for="recover-file" id="recover-label">Replace with a backup</label>
+      <input type="file" id="recover-file" accept=".json,application/json" hidden>
+      <span class="msg" id="recover-msg" role="status"></span>
+    </div>
+  </div>
+
+  <section class="panel" id="people-seed" hidden>
+    <h2>Start from this checkout</h2>
+    <p class="lede" style="margin-bottom:10px">The list is empty. This copy of the tools has the built-in admin and roster lists, so you can bring them in with one click. Admins and roster people come in as separate entries; edit or remove any you do not want.</p>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="seed-btn">Import</button>
+      <span class="msg" id="seed-msg"></span>
+    </div>
+  </section>
+
+  <section class="panel" id="people-empty" hidden>
+    <h2>No people yet</h2>
+    <p class="lede">Add your admins and staff below. Mark admins as Admin so they show in the Time-Off Log. Add an employee ID to anyone who makes address corrections so Address Catcher can name them. If you have a backup file, use Import.</p>
+  </section>
+
+  <section class="panel">
+    <h2 id="form-title">Add a person</h2>
+    <form id="person-form" autocomplete="off">
+      <fieldset id="person-fields" style="border:0">
+        <div class="row">
+          <div class="field"><label for="p-name">Name</label><input type="text" id="p-name" maxlength="80" required></div>
+          <div class="field" style="flex:0 1 150px"><label for="p-role">Role</label>
+            <select id="p-role"><option value="admin">Admin</option><option value="staff">Other staff</option></select>
+          </div>
+          <div class="field" style="flex:0 1 150px"><label for="p-empid">Employee ID</label><input type="text" id="p-empid" inputmode="numeric" placeholder="optional"></div>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="p-mine"> On my team</label>
+          <div class="field"><label for="p-manager">Manager (if not on my team)</label><input type="text" id="p-manager" maxlength="80" placeholder="optional"></div>
+        </div>
+        <div class="notice" id="rename-warning" role="alert" hidden>Time-Off entries are stored under the old name. Renaming splits this admin's attendance history. Keep the same name unless the old one was wrong. Press the button again to rename anyway.</div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="p-save">Add person</button>
+          <button type="button" class="btn btn-ghost" id="p-cancel" hidden>Cancel edit</button>
+          <span class="msg" id="p-msg" role="status"></span>
+        </div>
+      </fieldset>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>List<span class="count" id="people-count"></span></h2>
+    <div class="table-wrap">
+      <table id="people-table">
+        <thead><tr><th>Name</th><th>Role</th><th>Employee ID</th><th>Team</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Backup</h2>
+    <p class="lede" style="margin-bottom:10px">Export saves the list as a file. Import replaces this browser's list with a file's list.</p>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost" id="export-btn">Export</button>
+      <label class="btn btn-ghost" for="import-file" id="import-label">Import</label>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <span class="msg" id="io-msg" role="status"></span>
+    </div>
+  </section>
+</main>
+
+<!-- Seed sources for the one-click import. Present on a local checkout only:
+     the hosted builds never ship either file, and the page works without them. -->
+<script src="lib/admins.js"></script>
+<script src="lib/employee-roster.js"></script>
+<script src="lib/people.js"></script>
+<script>
+(function () {
+  const store = People.createStore(window.localStorage);
+  const $ = function (id) { return document.getElementById(id); };
+  let editingId = null;
+  let editSnapshot = '';     // the person as the form opened, to spot a change made elsewhere
+  let renameConfirmed = ''; // 'id|new name' once the admin rename warning was shown
+
+  const ERRORS = {
+    'name-required': 'Enter a name.',
+    'name-too-long': 'That name is too long.',
+    'manager-too-long': 'That manager name is too long.',
+    'bad-role': 'Pick a role.',
+    'bad-employee-id': 'An employee ID is digits only.',
+    'duplicate-name': 'Someone with that name is already on the list.',
+    'duplicate-employee-id': 'Someone already has that employee ID.',
+    'duplicate-id': 'The file lists the same person twice.',
+    'not-found': 'That person is no longer on the list.',
+    'unreadable': 'The People list cannot be read, so nothing was saved.',
+    'storage': 'This browser would not save the list.',
+    'not-empty': 'The list already has people, so nothing was imported.',
+    'not-unreadable': 'The list can be read now, so nothing was replaced.',
+    'not-json': 'That file is not a People backup.',
+    'not-a-people-file': 'That file is not a People backup.',
+    'unknown-version': 'That backup is from a newer version of this page.',
+    'invalid-person': 'That backup has an entry this page cannot check.',
+  };
+  function say(el, text, isErr) { el.textContent = text || ''; el.className = 'msg' + (isErr ? ' err' : ''); }
+  function errText(code) { return ERRORS[code] || 'Not saved.'; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function candidates() {
+    const admins = window.Admins && Array.isArray(window.Admins.ADMINS) ? window.Admins.ADMINS : null;
+    const roster = window.EmployeeRoster && typeof window.EmployeeRoster.entries === 'function' ? window.EmployeeRoster.entries() : null;
+    return People.seedCandidates(admins, roster);
+  }
+
+  function readForm() {
+    return {
+      name: $('p-name').value,
+      role: $('p-role').value,
+      employeeId: $('p-empid').value,
+      mine: $('p-mine').checked,
+      manager: $('p-manager').value,
+    };
+  }
+  function fillForm(p) {
+    $('p-name').value = p ? p.name : '';
+    $('p-role').value = p ? p.role : 'admin';
+    $('p-empid').value = p ? p.employeeId : '';
+    $('p-mine').checked = p ? p.mine : false;
+    $('p-manager').value = p ? p.manager : '';
+  }
+  // Any change of state cancels an open edit, so the next save can never land
+  // on the wrong person (docs/agents/known-traps.md "Wrong owner after an edit").
+  function snapshotOf(p) { return JSON.stringify([p.name, p.role, p.employeeId, p.mine, p.manager]); }
+  function clearRenameWarning() {
+    renameConfirmed = '';
+    $('rename-warning').hidden = true;
+    $('p-save').textContent = editingId ? 'Save changes' : 'Add person';
+  }
+  function cancelEdit() {
+    editingId = null;
+    editSnapshot = '';
+    fillForm(null);
+    clearRenameWarning();
+    $('form-title').textContent = 'Add a person';
+    $('p-save').textContent = 'Add person';
+    $('p-cancel').hidden = true;
+  }
+  function startEdit(id) {
+    const p = store.list().filter(function (x) { return x.id === id; })[0];
+    if (!p) { cancelEdit(); render(); return; }
+    editingId = id;
+    editSnapshot = snapshotOf(p);
+    fillForm(p);
+    clearRenameWarning();
+    $('form-title').textContent = 'Edit ' + p.name;
+    $('p-save').textContent = 'Save changes';
+    $('p-cancel').hidden = false;
+    say($('p-msg'), '');
+    render();
+    $('p-name').focus();
+  }
+
+  // An edit is stale when that person changed or was removed since the form
+  // opened (another tab, or another tool). Cancel it, say so, and let nothing
+  // save over the newer change.
+  function dropStaleEdit(people) {
+    if (!editingId) return false;
+    const cur = people.filter(function (p) { return p.id === editingId; })[0];
+    if (cur && snapshotOf(cur) === editSnapshot) return false;
+    cancelEdit();
+    say($('p-msg'), (cur ? cur.name + ' was changed' : 'That person was removed') + ' in another tab, so the open edit was cancelled. Press Edit to start again.', true);
+    return true;
+  }
+
+  function render() {
+    const state = store.status();
+    const unreadable = state === 'unreadable';
+    const people = store.list();
+    dropStaleEdit(people);
+
+    $('people-unreadable').hidden = !unreadable;
+    $('person-fields').disabled = unreadable;
+    $('export-btn').disabled = unreadable;
+    $('import-file').disabled = unreadable;
+    $('import-label').style.opacity = unreadable ? '.45' : '';
+
+    const offer = !unreadable && !people.length ? candidates() : [];
+    $('people-seed').hidden = !offer.length;
+    $('seed-btn').textContent = 'Import ' + offer.length + ' ' + (offer.length === 1 ? 'person' : 'people');
+    $('people-empty').hidden = unreadable || people.length > 0 || offer.length > 0;
+
+    $('people-count').textContent = unreadable ? '' : '(' + people.length + ')';
+    const body = $('people-table').querySelector('tbody');
+    if (!people.length) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">' + (unreadable ? 'Cannot read the list.' : 'Nobody on the list yet.') + '</td></tr>';
+      return;
+    }
+    body.innerHTML = people.map(function (p) {
+      const team = p.mine ? 'Mine' : (p.manager ? esc(p.manager) : '<span class="muted">&mdash;</span>');
+      return '<tr data-id="' + esc(p.id) + '"' + (p.id === editingId ? ' class="editing"' : '') + '>' +
+        '<td class="person-name">' + esc(p.name) + '</td>' +
+        '<td><span class="pill' + (p.role === 'admin' ? ' admin' : '') + '">' + (p.role === 'admin' ? 'Admin' : 'Staff') + '</span></td>' +
+        '<td>' + (p.employeeId ? esc(p.employeeId) : '<span class="muted">&mdash;</span>') + '</td>' +
+        '<td>' + team + '</td>' +
+        '<td class="row-actions">' +
+          '<button type="button" class="btn btn-ghost" data-action="edit" data-id="' + esc(p.id) + '">Edit</button> ' +
+          '<button type="button" class="btn btn-danger" data-action="remove" data-id="' + esc(p.id) + '">Remove</button>' +
+        '</td></tr>';
+    }).join('');
+  }
+
+  $('person-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    const input = readForm();
+    if (editingId) {
+      const people = store.list();
+      if (dropStaleEdit(people)) { render(); return; }
+      // Renaming an admin splits their attendance history (Time-Off groups by
+      // exact name), so it needs a second, deliberate click.
+      const was = people.filter(function (p) { return p.id === editingId; })[0];
+      const newName = People.cleanText(input.name);
+      if (was && was.role === 'admin' && newName && newName !== was.name) {
+        const key = editingId + '|' + newName;
+        if (renameConfirmed !== key) {
+          renameConfirmed = key;
+          $('rename-warning').hidden = false;
+          $('p-save').textContent = 'Rename anyway';
+          say($('p-msg'), '');
+          return;
+        }
+      }
+    }
+    const r = editingId ? store.update(editingId, input) : store.add(input);
+    if (!r.ok) { say($('p-msg'), errText(r.error), true); render(); return; }
+    say($('p-msg'), (editingId ? 'Saved ' : 'Added ') + r.person.name + '.');
+    cancelEdit();
+    render();
+  });
+  $('p-name').addEventListener('input', function () { if (renameConfirmed) clearRenameWarning(); });
+  $('p-cancel').addEventListener('click', function () { cancelEdit(); say($('p-msg'), ''); render(); });
+
+  $('people-table').addEventListener('click', function (ev) {
+    const btn = ev.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    if (btn.getAttribute('data-action') === 'edit') { startEdit(id); return; }
+    const p = store.list().filter(function (x) { return x.id === id; })[0];
+    if (!p) { render(); return; }
+    if (!window.confirm('Remove ' + p.name + ' from the People list?')) return;
+    cancelEdit();
+    const r = store.remove(id);
+    say($('p-msg'), r.ok ? 'Removed ' + p.name + '.' : errText(r.error), !r.ok);
+    render();
+  });
+
+  $('seed-btn').addEventListener('click', function () {
+    cancelEdit();
+    const r = store.seed(candidates());
+    say($('seed-msg'), r.ok ? '' : errText(r.error), !r.ok);
+    say($('p-msg'), r.ok ? 'Imported ' + r.added + ' ' + (r.added === 1 ? 'person' : 'people') + (r.skipped ? ' (' + r.skipped + ' skipped as duplicates)' : '') + '.' : '');
+    render();
+  });
+
+  function download(text, name, type) {
+    const blob = new Blob([text], { type: type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 1000);
+  }
+  function stamp() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  // Read the chosen file, then clear the input so picking the SAME file again
+  // fires another change event.
+  function readChosen(input, done) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function () { input.value = ''; done(String(reader.result || '')); };
+    reader.onerror = function () { input.value = ''; };
+    reader.readAsText(file);
+  }
+
+  $('export-btn').addEventListener('click', function () {
+    const text = store.exportText();
+    if (text == null) { say($('io-msg'), errText('unreadable'), true); return; }
+    try {
+      download(text, 'people-' + stamp() + '.json', 'application/json');
+      say($('io-msg'), 'Exported ' + store.list().length + ' people.');
+    } catch (e) {
+      say($('io-msg'), 'This browser would not save the file.', true);
+    }
+  });
+
+  $('import-file').addEventListener('change', function () {
+    readChosen(this, function (text) {
+      const chk = store.inspectImport(text);
+      if (!chk.ok) { say($('io-msg'), errText(chk.error), true); return; }
+      const have = store.list().length;
+      if (have && !window.confirm('Replace the ' + have + ' people in this browser with the ' + chk.people.length + ' in the file?')) return;
+      cancelEdit();
+      const r = store.importText(text);
+      say($('io-msg'), r.ok ? 'Imported ' + r.count + ' people.' : errText(r.error), !r.ok);
+      render();
+    });
+  });
+
+  // Only for an unreadable list: save the raw text first, so nothing is lost,
+  // then replace it with the chosen backup.
+  $('recover-file').addEventListener('change', function () {
+    readChosen(this, function (text) {
+      const msg = $('recover-msg');
+      if (store.status() !== 'unreadable') { say(msg, errText('not-unreadable'), true); render(); return; }
+      const chk = store.inspectImport(text);
+      if (!chk.ok) { say(msg, errText(chk.error), true); return; }
+      if (!window.confirm('Replace the unreadable People list with the ' + chk.people.length + ' people in this backup? A copy of the unreadable text is saved to your Downloads first.')) return;
+      const raw = store.rawText();
+      if (raw != null) {
+        try {
+          download(raw, 'people-unreadable-' + stamp() + '.txt', 'text/plain');
+        } catch (e) {
+          say(msg, 'This browser would not save a copy of the unreadable list, so nothing was replaced.', true);
+          return;
+        }
+      }
+      cancelEdit();
+      const r = store.recoverText(text);
+      say(msg, r.ok ? '' : errText(r.error), !r.ok);
+      say($('p-msg'), r.ok ? 'Replaced the unreadable list with ' + r.count + ' ' + (r.count === 1 ? 'person' : 'people') + '. A copy of the old text is in your Downloads.' : '');
+      render();
+    });
+  });
+
+  // Another tab (or another tool) changed the list: show it.
+  window.addEventListener('storage', function (ev) { if (!ev || ev.key == null || ev.key === People.KEY) render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
