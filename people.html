@@ -68,6 +68,9 @@
     .muted { color: var(--text-faint); }
     td.row-actions { white-space: nowrap; text-align: right; }
     .count { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-left: 6px; }
+    .notice.info { border-left-color: var(--brand-ink); }
+    .notice.info b { color: var(--brand-ink); }
+    details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--brand-ink); }
   </style>
   <link rel="stylesheet" href="theme.css">
   <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
@@ -80,11 +83,54 @@
 </header>
 
 <main>
-  <p class="lede">One list of admins and staff for every tool. The Time-Off Log fills its Admin field from the admins here, and Address Catcher uses the employee IDs to name who made a correction. The list stays in this browser and is shared by every tool on this site. Use Export to keep a copy or move it to another device.</p>
+  <p class="lede">One list of admins and staff for every tool. The Time-Off Log fills its Admin field from the admins here, and Address Catcher uses the employee IDs to name who made a correction. Every tool on this site shares the list saved in this browser. With the repo set up in Settings below, this page loads the list from the repo and saves your changes back to it.</p>
+
+  <section class="panel" id="sync-panel">
+    <h2>Repo</h2>
+    <p class="lede" id="sync-hint">This list is only in this browser. To load it from your private repo and save changes back, open Settings at the bottom of this box.</p>
+    <p class="msg" id="sync-status" role="status"></p>
+    <div class="notice info" id="sync-unsaved" style="margin-top:10px" hidden>
+      <b id="sync-unsaved-title">Not saved to the repo.</b> <span id="sync-unsaved-text"></span>
+      <div class="actions" style="margin-top:10px">
+        <button type="button" class="btn btn-primary" id="sync-save">Save to repo</button>
+      </div>
+    </div>
+    <div class="notice info" id="sync-choice" style="margin-top:10px" hidden>
+      <b>The repo has a different list.</b> <span id="sync-choice-text"></span>
+      <div class="actions" style="margin-top:10px">
+        <button type="button" class="btn btn-ghost" id="sync-use-remote">Use the repo's list</button>
+        <button type="button" class="btn btn-primary" id="sync-save-mine">Save mine to the repo</button>
+      </div>
+    </div>
+    <div class="actions" id="sync-actions" style="margin-top:10px" hidden>
+      <button type="button" class="btn btn-ghost" id="sync-reload">Reload from repo</button>
+    </div>
+    <p class="lede" style="margin-top:10px">The Time-Off Log, Writeups and Address Catcher read the list saved in this browser, so they show the repo's list once this page has loaded it on this device.</p>
+    <details id="sync-settings" style="margin-top:10px">
+      <summary>Settings</summary>
+      <p class="lede" style="margin:8px 0 10px">Paste a fine-grained GitHub token with Contents read and write on your private repo, then say where the People file is. Everything here is stored only in this browser. The token is never shown again.</p>
+      <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="field"><label for="gh-owner">Repo owner</label><input type="text" id="gh-owner" placeholder="your GitHub username" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="gh-repo">Repo name</label><input type="text" id="gh-repo" placeholder="your private repo" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="gh-branch">Branch</label><input type="text" id="gh-branch" placeholder="main" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      </div>
+      <div class="row" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="field"><label for="gh-path">File path</label><input type="text" id="gh-path" placeholder="notes/people.json" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="gh-token">GitHub token</label><input type="password" id="gh-token" placeholder="paste a new token" autocomplete="off"></div>
+      </div>
+      <p class="lede" id="gh-token-state" style="margin-bottom:10px"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="settings-save">Save settings</button>
+        <button type="button" class="btn btn-danger" id="settings-clear">Remove settings</button>
+        <span class="msg" id="settings-msg" role="status"></span>
+      </div>
+    </details>
+  </section>
 
   <div class="notice" id="people-unreadable" hidden>
     <b>The People list in this browser cannot be read.</b> It was saved by a newer version of this page, or it is damaged. Nothing is shown and nothing is saved over it. The other tools use their built-in lists until it is fixed. Open the newest version of this page, or replace it with a backup. Replacing first saves a copy of the unreadable text to your Downloads, so nothing is lost.
     <div class="actions" style="margin-top:10px">
+      <button type="button" class="btn btn-primary" id="recover-remote" hidden>Replace with the repo's list</button>
       <label class="btn btn-ghost" for="recover-file" id="recover-label">Replace with a backup</label>
       <input type="file" id="recover-file" accept=".json,application/json" hidden>
       <span class="msg" id="recover-msg" role="status"></span>
@@ -157,9 +203,15 @@
 <script src="lib/admins.js"></script>
 <script src="lib/employee-roster.js"></script>
 <script src="lib/people.js"></script>
+<script src="lib/github-json-sync.js"></script>
+<script src="lib/sync-controller.js"></script>
+<script src="lib/people-sync.js"></script>
 <script>
 (function () {
-  const store = People.createStore(window.localStorage);
+  // The repo working copy (#1124, ADR 0024). sync.store is the People store
+  // with every successful edit marking the list unsaved.
+  const sync = PeopleSync.create({ storage: window.localStorage });
+  const store = sync.store;
   const $ = function (id) { return document.getElementById(id); };
   let editingId = null;
   let editSnapshot = '';     // the person as the form opened, to spot a change made elsewhere
@@ -276,6 +328,7 @@
     $('people-empty').hidden = unreadable || people.length > 0 || offer.length > 0;
 
     $('people-count').textContent = unreadable ? '' : '(' + people.length + ')';
+    renderSync();
     const body = $('people-table').querySelector('tbody');
     if (!people.length) {
       body.innerHTML = '<tr><td colspan="5" class="muted">' + (unreadable ? 'Cannot read the list.' : 'Nobody on the list yet.') + '</td></tr>';
@@ -422,10 +475,210 @@
     });
   });
 
-  // Another tab (or another tool) changed the list: show it.
-  window.addEventListener('storage', function (ev) { if (!ev || ev.key == null || ev.key === People.KEY) render(); });
+  // ── Repo sync (#1124, ADR 0024) ────────────────────────────────────────
+  // Logic lives in lib/people-sync.js; this is wording and wiring only.
+  let syncAction = null;   // what the last pull found
+  let syncBusy = false;
+  let statusText = '', statusErr = false;
+  const UNCHANGED = ' Your list here is unchanged.';
+  const READ_REASONS = {
+    'not-json': 'it is not a People list',
+    'not-a-people-file': 'it is not a People list',
+    'unknown-version': 'it was saved by a newer version of this page',
+    'invalid-person': 'it has an entry this page cannot check',
+    'duplicate-id': 'it lists the same person twice',
+    'duplicate-name': 'it lists the same name twice',
+    'duplicate-employee-id': 'two people in it share an employee ID',
+  };
+  const SETTINGS_ERRORS = {
+    'bad-owner': 'The repo owner is a GitHub user or organization name: letters, digits and dashes.',
+    'bad-repo': 'The repo name is letters, digits, dots, dashes and underscores.',
+    'bad-branch': 'The branch name has a character this page does not accept.',
+    'bad-path': 'The file path is a path inside the repo that ends in .json, like the example.',
+  };
+  function plural(n) { return n + ' ' + (n === 1 ? 'person' : 'people'); }
+  function clock(iso) {
+    const d = iso ? new Date(iso) : new Date();
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  function failText(err, saving) {
+    const e = err || {};
+    const tail = saving ? ' Nothing was saved.' : UNCHANGED;
+    if (e.code === 'conflict') return 'The list in the repo changed since this page loaded it, so nothing was saved. Press Reload from repo to see the repo\'s list and choose.';
+    if (e.code === 'auth') return 'The repo refused the token. Check it in Settings.' + tail;
+    if (e.code === 'http') return 'GitHub answered with an error' + (e.status ? ' (' + e.status + ')' : '') + '. Try again in a minute.' + tail;
+    if (e.code === 'coords' || e.code === 'off') return 'Add the repo owner, name, branch and a token in Settings.' + tail;
+    if (e.code === 'storage') return 'This browser would not save the repo\'s list.' + UNCHANGED;
+    if (e.code === 'unreadable') return 'The list in this browser cannot be read, so nothing was saved.';
+    if (e.code === 'busy') return 'A save is already running.';
+    return 'Could not reach GitHub.' + tail;
+  }
+  function setSyncStatus(t, isErr) { statusText = t || ''; statusErr = !!isErr; }
 
+  function renderSync() {
+    const on = sync.configured();
+    const unreadable = store.status() === 'unreadable';
+    $('sync-hint').hidden = on;
+    $('sync-actions').hidden = !on;
+    say($('sync-status'), on ? statusText : '', statusErr);
+    const pendingN = sync.pendingCount();
+    const choosing = on && !unreadable && syncAction === 'choose' && pendingN != null;
+    $('sync-choice').hidden = !choosing;
+    if (choosing) {
+      $('sync-choice-text').textContent = 'The repo has ' + plural(pendingN) + '. This browser has ' + plural(store.list().length) +
+        ', with changes that were never saved to the repo, so nothing was replaced. Pick one.';
+    }
+    const missing = syncAction === 'missing';
+    const unsaved = sync.unsaved();
+    const showSave = on && !choosing && !unreadable && (unsaved || missing);
+    $('sync-unsaved').hidden = !showSave;
+    if (showSave) {
+      $('sync-unsaved-title').textContent = missing ? 'The repo has no People file yet.' : 'Not saved to the repo.';
+      $('sync-unsaved-text').textContent = missing
+        ? 'Save to repo creates it with the ' + plural(store.list().length) + ' here.'
+        : 'This list has changes the repo does not have yet. Other devices get them once you save.';
+    }
+    ['sync-save', 'sync-save-mine', 'sync-use-remote', 'sync-reload', 'recover-remote', 'settings-save', 'settings-clear'].forEach(function (id) {
+      $(id).disabled = syncBusy;
+    });
+    $('recover-remote').hidden = !(on && unreadable && syncAction === 'recover' && pendingN != null);
+    $('gh-token-state').textContent = sync.settings().hasToken
+      ? 'A token is saved on this device. Leave the token box empty to keep it.'
+      : 'No token is saved on this device.';
+  }
+
+  async function runPull() {
+    if (!sync.configured() || syncBusy) return;
+    syncBusy = true;
+    setSyncStatus('Loading from the repo...');
+    render();
+    let r;
+    try { r = await sync.pull(); } catch (e) { r = { action: 'error', error: { code: 'network' } }; }
+    syncBusy = false;
+    syncAction = r.action;
+    if (r.action === 'replace') {
+      cancelEdit();
+      setSyncStatus('Loaded ' + plural(r.count) + ' from the repo at ' + clock(sync.loadedAt()) + '.');
+    } else if (r.action === 'choose') {
+      setSyncStatus('The repo\'s list was not loaded, because this browser has changes that were never saved to the repo.', true);
+    } else if (r.action === 'recover') {
+      setSyncStatus('The repo has ' + plural(r.count) + ', but the list in this browser cannot be read, so nothing was loaded. Use Replace with the repo\'s list below.', true);
+    } else if (r.action === 'missing') {
+      setSyncStatus('There is no People file at ' + sync.settings().path + ' in that repo, or the token cannot see the repo.' + UNCHANGED, true);
+    } else if (r.action === 'invalid') {
+      setSyncStatus('The file in the repo is not a People list this page can read: ' + (READ_REASONS[r.error && r.error.detail] || 'it is not a People list') + '.' + UNCHANGED, true);
+    } else if (r.action === 'off') {
+      setSyncStatus('');
+    } else {
+      setSyncStatus(failText(r.error, false), true);
+    }
+    render();
+  }
+
+  async function runSave() {
+    if (syncBusy) return;
+    syncBusy = true;
+    setSyncStatus('Saving to the repo...');
+    render();
+    let r;
+    try { r = await sync.save(); } catch (e) { r = { ok: false, error: { code: 'network' } }; }
+    syncBusy = false;
+    if (r.ok) {
+      syncAction = null;
+      setSyncStatus('Saved ' + plural(r.count) + ' to the repo at ' + clock() + '.');
+    } else {
+      setSyncStatus(failText(r.error, true), true);
+    }
+    render();
+  }
+
+  $('sync-save').addEventListener('click', function () { runSave(); });
+  $('sync-reload').addEventListener('click', function () { runPull(); });
+  $('sync-save-mine').addEventListener('click', function () {
+    const n = sync.pendingCount();
+    if (!window.confirm('Replace the repo\'s list of ' + plural(n) + ' with the ' + plural(store.list().length) + ' in this browser?')) return;
+    runSave();
+  });
+  $('sync-use-remote').addEventListener('click', function () {
+    const n = sync.pendingCount();
+    if (!window.confirm('Replace the ' + plural(store.list().length) + ' in this browser with the ' + plural(n) + ' in the repo? The changes made here are lost.')) return;
+    const r = sync.useRemote();
+    if (!r.ok) { setSyncStatus(errText(r.error), true); render(); return; }
+    cancelEdit();
+    syncAction = 'replace';
+    setSyncStatus('Loaded ' + plural(r.count) + ' from the repo at ' + clock(sync.loadedAt()) + '.');
+    render();
+  });
+
+  // The recover flow with the repo's list as the backup: the unreadable text
+  // is saved to Downloads first, or nothing is replaced.
+  $('recover-remote').addEventListener('click', function () {
+    const msg = $('recover-msg');
+    if (store.status() !== 'unreadable') { say(msg, errText('not-unreadable'), true); render(); return; }
+    const n = sync.pendingCount();
+    if (!window.confirm('Replace the unreadable People list with the ' + plural(n) + ' in the repo? A copy of the unreadable text is saved to your Downloads first.')) return;
+    const r = sync.recoverFromRemote(function (raw) {
+      download(raw, 'people-unreadable-' + stamp() + '.txt', 'text/plain');
+      return true;
+    });
+    if (!r.ok) {
+      say(msg, r.error === 'raw-not-saved' ? 'This browser would not save a copy of the unreadable list, so nothing was replaced.' : errText(r.error), true);
+      render();
+      return;
+    }
+    cancelEdit();
+    say(msg, '');
+    syncAction = 'replace';
+    setSyncStatus('Loaded ' + plural(r.count) + ' from the repo at ' + clock(sync.loadedAt()) + '.');
+    say($('p-msg'), 'Replaced the unreadable list with ' + plural(r.count) + ' from the repo. A copy of the old text is in your Downloads.');
+    render();
+  });
+
+  // Settings: the token box is always left empty, so the token never shows.
+  function fillSettings() {
+    const s = sync.settings();
+    $('gh-owner').value = s.owner;
+    $('gh-repo').value = s.repo;
+    $('gh-branch').value = s.branch;
+    $('gh-path').value = s.path;
+    $('gh-token').value = '';
+  }
+  $('settings-save').addEventListener('click', function () {
+    const r = sync.saveSettings({
+      owner: $('gh-owner').value, repo: $('gh-repo').value, branch: $('gh-branch').value,
+      path: $('gh-path').value, token: $('gh-token').value,
+    });
+    $('gh-token').value = '';
+    if (!r.ok) { say($('settings-msg'), SETTINGS_ERRORS[r.error] || 'Not saved.', true); return; }
+    fillSettings();
+    syncAction = null;
+    setSyncStatus('');
+    if (r.configured) {
+      say($('settings-msg'), 'Saved. Loading from the repo...');
+      runPull();
+    } else {
+      say($('settings-msg'), 'Saved. Add the repo owner, name, branch and a token to load from the repo.');
+      render();
+    }
+  });
+  $('settings-clear').addEventListener('click', function () {
+    if (!window.confirm('Remove the repo settings and token from this browser? The list here stays.')) return;
+    sync.clearSettings();
+    fillSettings();
+    syncAction = null;
+    setSyncStatus('');
+    say($('settings-msg'), 'Settings removed. The list stays in this browser.');
+    render();
+  });
+
+  // Another tab (or another tool) changed the list or the repo settings: show it.
+  window.addEventListener('storage', function (ev) {
+    if (!ev || ev.key == null || ev.key === People.KEY || String(ev.key).indexOf('people_gh_') === 0) render();
+  });
+
+  fillSettings();
   render();
+  runPull();
 })();
 </script>
 </body>
