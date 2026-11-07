@@ -144,7 +144,7 @@
     .workdays .wd.disabled { opacity: 0.5; cursor: not-allowed; }
     .workdays .workdays-hint { margin-top: 6px; font-size: 12px; }
 
-    #incident-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+    #incident-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; align-items: end; }
     #incident-form .form-actions { display: flex; gap: 8px; grid-column: 1 / -1; }
     #incident-form .inc-hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
     /* A free-text field (a Performance entry) takes the whole row. */
@@ -163,6 +163,7 @@
     #incident-list label { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; min-width: 0; }
     #incident-list input[type="checkbox"] { width: 17px; height: 17px; accent-color: #4D148C; flex: none; }
     .inc-text { overflow-wrap: anywhere; }
+    .inc-tag { display: block; width: fit-content; margin-top: 3px; padding: 1px 6px; border: 1px solid var(--border-soft); border-radius: 4px; font-size: 11px; color: var(--text-muted); }
     .incident-empty { margin-top: 14px; }
     /* A checkbox field (Protected Sick Time) sits on one line with its label. */
     label.field.field-check { flex-direction: row; align-items: center; gap: 8px; align-self: center; padding-top: 18px; cursor: pointer; }
@@ -713,7 +714,7 @@
     $('inc-hint').hidden = !meta.hint;
     meta.fields.forEach(function (f) {
       var label = document.createElement('label');
-      label.className = f.type === 'checkbox' ? 'field field-check' : (f.type === 'text' ? 'field field-wide' : 'field');
+      label.className = f.type === 'checkbox' ? 'field field-check' : (f.type === 'text' || f.wide ? 'field field-wide' : 'field');
       label.htmlFor = 'inc-f-' + f.key;
       label.appendChild(document.createTextNode(f.label));
       var input;
@@ -772,15 +773,22 @@
     var dup = store.duplicateOnDay(inc);
     if (dup) {
       var who = currentAdmin();
-      // A sick early departure beside a Call-off or NCNS (review round 1):
-      // a shift that was never worked cannot also be left early.
-      var crossSick = (dup.kind === 'sickearly') !== (inc.kind === 'sickearly');
+      // An early departure beside a Call-off or NCNS (review round 1): a
+      // shift that was never worked cannot also be left early. Two early
+      // departures on one date are not a cross: that is one day counted twice.
+      var crossEarly = W.isEarlyDeparture(dup) !== W.isEarlyDeparture(inc);
       return showError('inc-error', (who ? W.firstName(who.name) : 'This admin') + ' already has a ' +
         kindMeta(dup.kind).label + ' on ' + W.formatDate(dup.date) +
-        (crossSick
-          ? '. A Left early (sick) cannot share a shift date with a Call-off or NCNS. Edit that one instead.'
+        (crossEarly
+          ? '. A ' + kindMeta(W.isEarlyDeparture(inc) ? inc.kind : dup.kind).label + ' cannot share a shift date with a Call-off or NCNS. Edit that one instead.'
           : '. Edit that one instead, so a day is never counted twice.'));
     }
+    var history = store.history(state.adminId);
+    var before = store.incidents(state.adminId).filter(function (x) { return x.id === state.editingId; })[0] || null;
+    var locked = W.kindChangeProblem(before, inc, history);
+    if (locked) return showError('inc-error', locked);
+    var warning = W.reclassifyWarning(before, inc, history);
+    if (warning && !window.confirm(warning)) return;
     var saved = store.saveIncident(inc);
     if (!saved) return showError('inc-error', 'This browser would not save the incident.');
     showError('inc-error', '');
@@ -813,6 +821,7 @@
   function renderIncidents() {
     var list = $('incident-list');
     var incidents = state.adminId ? store.incidents(state.adminId) : [];
+    var history = state.adminId ? store.history(state.adminId) : [];
     // Forget checks for incidents that no longer exist.
     var ids = new Set(incidents.map(function (i) { return i.id; }));
     state.checked.forEach(function (id) {
@@ -843,6 +852,13 @@
       text.textContent = W.describeIncident(inc);
       label.appendChild(box);
       label.appendChild(text);
+      var used = W.incidentTag(inc, history);
+      if (used) {
+        var tag = document.createElement('span');
+        tag.className = 'inc-tag';
+        tag.textContent = used;
+        text.appendChild(tag);
+      }
       var edit = document.createElement('button');
       edit.type = 'button';
       edit.className = 'btn btn-gray btn-small inc-edit';
@@ -853,7 +869,7 @@
       del.className = 'btn btn-gray btn-small inc-delete';
       del.textContent = 'Delete';
       del.addEventListener('click', function () {
-        if (!window.confirm('Delete this incident? ' + W.describeIncident(inc))) return;
+        if (!window.confirm(W.deletePrompt(inc, store.history(inc.adminId)))) return;
         store.deleteIncident(inc.id);
         if (state.checked.delete(inc.id)) setHabitual(false);
         if (state.editingId === inc.id) cancelEdit();
@@ -984,7 +1000,9 @@
     $('draft-hint').textContent = result.empty
       ? 'Check one or more incidents to build the draft.'
       : 'Pick a document type to build the draft.';
-    $('draft-hint').hidden = !result.empty && !!result.docType;
+    // A sick departure ticked and left out: the page already says why, and
+    // how many more are needed.
+    $('draft-hint').hidden = (!result.empty && !!result.docType) || result.notDrafted.some(W.isEarlyDeparture);
 
     // The 30-day pattern line: counts only, from the attendance rules module.
     $('pattern-line').textContent = admin ? result.pattern.text : '';
@@ -1124,6 +1142,7 @@
         if (!window.confirm('Delete this writeup from history on this device? ' + e.line)) return;
         store.deleteHistory(e.id);
         showSaveStatus('');
+        renderIncidents();
         renderDraft();
       });
       li.appendChild(t);
