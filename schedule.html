@@ -3,904 +3,1433 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Schedule Viewer — Station 849</title>
+  <title>Schedule Planner - Station 849</title>
   <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <!--
+    Schedule Planner (#1129, spec docs/superpowers/specs/2026-11-12-schedule-planner-design.md).
+    View and wiring only. Every rule (who wins a cell, the counts, the sort,
+    the time off file) lives in lib/schedule-planner.js and
+    lib/time-off-report.js; every saved byte goes through
+    lib/schedule-planner-store.js. Device-local, never synced.
+  -->
   <style>
-    /* Brand-ink text token (issue 393): theme.css deliberately leaves
-       FedEx purple untokenized for backgrounds/borders/pills (stays
-       meaningful in both themes), but purple TEXT on a dark surface is
-       illegible — this token is scoped to text-color uses only. */
+    /* Light values. The dark half of every token lives in theme.css, inside
+       html[data-theme="dark"], because theme.css loads after this block and
+       wins (the PR #504 trap). */
+    /* theme.css reads --brand-ink (the purple-text token, issue 393) and
+       defines neither value, so both live here as on every other tool. */
     :root { --brand-ink: #4D148C; }
     html[data-theme="dark"] { --brand-ink: #c4b5fd; }
+    :root {
+      /* Area chips: fixed fills that read on both surfaces. */
+      --sp-a: #d92d20; --sp-b: #f08c00; --sp-c: #f2c94c; --sp-me: #2563eb; --sp-dmg: #23873f;
+      --sp-xp: #7c3aed; --sp-999: #6b7280; --sp-lc: #0b7c87; --sp-og: #8d5a3b;
+      --sp-chip-ink: #ffffff; --sp-chip-ink-warm: #2b1a00;
+      --sp-off-bg: #eceef3;
+      --sp-vac-a: #ece7f6; --sp-vac-b: #ddd4ee; --sp-vac-ink: #4D148C;
+      --sp-asked: #7c3aed;
+      --sp-zero: #b4b7c5;
+      --sp-today: #fff4d6;
+      --sp-focus: #0b63ce;
+      --sp-accent: #4D148C; --sp-accent-ink: #ffffff;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
 
     body {
-      font-family: 'Segoe UI', Arial, sans-serif;
+      font-family: 'Segoe UI', system-ui, Arial, sans-serif;
       background: var(--app-bg);
       color: var(--text);
       min-height: 100vh;
       padding: 20px;
+      font-size: 14px;
+      line-height: 1.45;
     }
+    .wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+    /* #planner is a .wrap inside a .wrap. An auto margin on a child of a column
+       flex parent turns off stretch, so it would size to the grid's minimum
+       width and push the whole page sideways. Fill the parent instead, so only
+       the grid's own scroller ever scrolls. */
+    #planner { margin: 0; width: 100%; min-width: 0; max-width: none; }
 
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 50;
+    header.sp-head {
       background: #4D148C;
       color: white;
       padding: 14px 20px;
       border-radius: 8px;
-      margin-bottom: 20px;
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
+      gap: 6px 18px;
+      flex-wrap: wrap;
     }
-    header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
-    .back-link {
-      color: rgba(255,255,255,0.7);
-      font-size: 12px;
-      text-decoration: none;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      transition: color 0.12s;
-    }
-    .back-link:hover { color: white; }
-    #today-label { font-size: 12px; opacity: 0.85; font-weight: 600; }
+    .sp-title { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+    header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+    .range-label { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .back-link { color: white; opacity: 0.85; text-decoration: none; font-size: 13px; font-weight: 600; }
+    .back-link:hover { opacity: 1; }
 
+    .banner { border-radius: 8px; padding: 12px 16px; font-size: 14px; border: 1px solid; }
+    .banner.err { background: var(--surface); border-color: var(--sp-a); border-left-width: 5px; }
+    .banner b { display: block; margin-bottom: 2px; }
+    .banner .acts { margin-top: 8px; }
+
+    /* Buttons: the same .btn / .btn-gray every tool uses. */
     .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 7px 14px;
-      border-radius: 5px;
-      border: none;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 7px 14px; border-radius: 6px; border: 1px solid transparent;
+      cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
       transition: background 0.15s, opacity 0.15s;
     }
-    .btn:active { opacity: 0.85; }
-    .btn-purple { background: #4D148C; color: white; }
-    .btn-purple:hover { background: #3a0f6a; }
     .btn-gray { background: #e4e4e7; color: #333; }
     .btn-gray:hover { background: #d1d1d6; }
-    .btn-success { background: #16a34a; color: white; }
+    .btn-primary { background: var(--sp-accent); color: var(--sp-accent-ink); }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn.armed { background: var(--sp-a); color: var(--sp-chip-ink); }
+    button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--sp-focus); outline-offset: 2px;
+    }
+    input[type="text"], input[type="date"], select {
+      font: inherit; color: var(--text); background: var(--field-bg);
+      border: 1px solid var(--border-strong); border-radius: 6px; padding: 6px 8px;
+    }
 
-    /* ── Loader panel ───────────────────────────────────────────────────────── */
-    #loader {
-      background: var(--surface);
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    #loader .panel-body { padding: 18px 20px; }
-    #loader label {
-      display: block;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--brand-ink);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 6px;
-    }
-    #loader .hint-text { font-size: 11px; color: var(--text-faint); margin-bottom: 10px; line-height: 1.5; }
-    #schedule-input {
-      width: 100%;
-      font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 12px;
-      border: 1px solid var(--border-strong);
-      border-radius: 5px;
-      padding: 10px 12px;
-      resize: vertical;
-      min-height: 130px;
-      color: var(--text);
-      background: var(--field-bg-alt);
-      transition: border-color 0.15s;
-      white-space: pre;
-      overflow-wrap: normal;
-      overflow-x: auto;
-    }
-    #schedule-input:focus { outline: none; border-color: #4D148C; background: var(--field-bg); }
-    .loader-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-    #parse-status {
-      font-size: 12px;
-      font-weight: 600;
-      margin-left: 4px;
-    }
-    #parse-status.ok  { color: #16a34a; }
-    #parse-status.err { color: #dc2626; }
-    #file-input { display: none; }
+    /* The two bars. Row one: what you are planning and when. Row two: tools. */
+    .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+    /* Row one: the view switch and the date range share it. The range controls
+       take the rest of the row and wrap among themselves only when they must. */
+    .bar-1 { justify-content: space-between; flex-wrap: nowrap; align-items: flex-start; }
+    .bar-1 .modes { flex: 0 0 auto; }
+    .modes { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .modes button { font: inherit; font-weight: 600; border: 0; background: transparent; color: var(--text); padding: 8px 16px; cursor: pointer; }
+    .modes button[aria-pressed="true"] { background: var(--sp-accent); color: var(--sp-accent-ink); }
+    .range-ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 6px; flex: 1 1 0; min-width: 0; }
+    .range-ctl .btn { padding: 7px 10px; }
+    .range-ctl input[type="date"] { padding: 6px 6px; }
+    .range-ctl label { color: var(--text-muted); font-weight: 600; font-size: 13px; }
+    .range-ctl .quick { display: inline-flex; gap: 4px; }
+    .range-ctl .quick .btn[aria-pressed="true"] { background: var(--sp-accent); color: var(--sp-accent-ink); }
+    .muted { color: var(--text-muted); }
+    .bar-2 { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+    .bar-2 label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-weight: 600; font-size: 13px; }
+    .bar-2 .spacer { flex: 1 1 auto; }
+    .view-note { color: var(--text-muted); font-size: 13px; }
 
-    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    /* Time off file */
+    .file-zone {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+      background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 12px 16px;
+    }
+    .file-zone.over { border-color: var(--sp-accent); border-style: solid; }
+    .file-zone input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    #file-status { flex: 1 1 320px; font-size: 13px; }
+    #file-status .msg { display: block; font-weight: 600; }
+    #file-status .msg.err { color: var(--sp-a); }
+    #id-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    #id-prompt p { flex: 1 1 100%; font-size: 13px; color: var(--text-muted); }
 
-    /* ── No-schedule empty state ────────────────────────────────────────────── */
-    #empty-state {
-      background: var(--surface);
-      border: 2px dashed var(--border-strong);
-      border-radius: 10px;
-      padding: 48px 24px;
-      text-align: center;
-      margin-bottom: 20px;
-    }
-    #empty-state .icon { font-size: 34px; display: block; margin-bottom: 10px; }
-    #empty-state h2 { color: var(--brand-ink); font-size: 17px; margin-bottom: 6px; }
-    #empty-state p { color: var(--text-faint); font-size: 13px; }
+    /* Notices */
+    #notices { display: flex; flex-direction: column; gap: 8px; }
+    #notices:empty { display: none; }
+    .notice { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--sp-b); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+    .notice p + p, .notice ul { margin-top: 4px; }
+    .notice ul { padding-left: 18px; }
+    .notice .acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+    .notice select { padding: 5px 6px; font-size: 13px; }
 
-    /* ── Sub-table sections ─────────────────────────────────────────────────── */
-    .section {
-      background: var(--surface);
-      border-radius: 8px;
-      margin-bottom: 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      overflow: hidden;
-    }
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--border-soft);
-    }
-    .section-header h2 { font-size: 15px; font-weight: 700; }
-    .section-header .meta { font-size: 11px; color: var(--text-faint); }
+    /* Brushes */
+    .brushes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .brushes .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-right: 4px; font-weight: 700; }
+    .brush { font: inherit; font-weight: 700; font-size: 13px; padding: 5px 10px; min-width: 46px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
+    .brush.plain { background: var(--sp-off-bg); color: var(--text); font-weight: 600; }
+    .brush[aria-pressed="true"] { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--surface); }
+    .brushes .sep { width: 1px; height: 24px; background: var(--border-strong); margin: 0 4px; }
+    .hint { font-size: 12.5px; color: var(--text-muted); }
+    .hint kbd { font: inherit; font-weight: 700; color: var(--text); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; background: var(--surface); }
 
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th {
-      background: var(--surface-3);
-      padding: 9px 14px;
-      text-align: center;
-      font-weight: 600;
-      color: var(--text-muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
+    /* The grid */
+    .grid-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-width: 0; }
+    .scroll { overflow-x: auto; min-width: 0; }
+    #grid { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    /* One height for every admin row, tall enough for a chip plus the "asked off"
+       caption under it. */
+    #grid th, #grid td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; padding: 0; height: 56px; }
+    #grid tr > :last-child { border-right: 0; }
+    #grid thead th { background: var(--surface); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; height: 50px; min-width: 66px; }
+    #grid thead th b { display: block; font-size: 15px; color: var(--text); letter-spacing: 0; text-transform: none; }
+    #grid thead th.today { background: var(--sp-today); }
+    #grid thead th.today::after { content: "today"; display: block; font-size: 9.5px; letter-spacing: 0.08em; color: var(--text-muted); }
+    #grid .wkstart { border-left: 3px solid var(--border-strong); }
+    #grid .name {
+      position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--border);
+      text-align: left; padding: 0 10px 0 14px; min-width: 160px; white-space: nowrap; font-weight: 600; font-size: 14px;
     }
-    th.name-col, td.name-col {
-      text-align: left;
-      font-weight: 600;
-      color: var(--text);
-      white-space: nowrap;
-    }
-    th.sortable { cursor: pointer; user-select: none; }
-    th.sortable:hover { color: var(--text); background: var(--hover-soft); }
-    th.sortable.sort-active { color: var(--text); }
-    th.sortable.sort-active::after { content: ' \25B2'; font-size: 9px; color: var(--text-muted); }
-    th.sortable.sort-active.sort-desc::after { content: ' \25BC'; }
-    td {
-      padding: 9px 14px;
-      border-bottom: 1px solid var(--border-soft);
-      text-align: center;
-      vertical-align: middle;
-    }
-    tr:last-child td { border-bottom: none; }
-    /* Zebra + row-hover scoped away from .cov-cell: the coverage heatmap cells
-       carry their own status background (covered/fragile/uncovered), and these
-       rules' specificity would otherwise wash even rows / hovered rows back to a
-       flat surface color and hide the status. Grid cells (non-.cov-cell) keep
-       the zebra + hover treatment. */
-    tbody tr:nth-child(even) td:not(.cov-cell) { background: var(--surface-2); }
-    tr:hover td:not(.cov-cell) { background: var(--hover-row); }
+    #grid thead th.name { font-size: 11px; }
+    #grid .days { min-width: 54px; color: var(--text-muted); font-size: 13px; font-weight: 600; }
+    #grid .nm { font: inherit; color: inherit; background: none; border: 0; padding: 2px 0; cursor: text; border-bottom: 1px dashed transparent; }
+    #grid .nm:hover { border-bottom-color: var(--text-faint); }
+    #grid .noid { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 700; color: var(--sp-chip-ink-warm); background: var(--sp-c); vertical-align: 1px; }
+    #grid .rm { font: inherit; background: none; border: 0; color: var(--text-faint); padding: 2px 6px; margin-left: 4px; font-size: 13px; cursor: pointer; border-radius: 4px; }
+    #grid .rm:hover, #grid .rm.armed { color: var(--sp-a); font-weight: 700; }
+    #grid .editor { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; align-items: center; }
+    #grid .editor input { width: 9em; padding: 4px 6px; font-size: 13px; }
+    #grid .editor .btn { padding: 4px 10px; }
+    #grid .editor .err { flex-basis: 100%; color: var(--sp-a); font-size: 12px; font-weight: 600; white-space: normal; }
+    #grid td.empty-row { text-align: left; padding: 14px; color: var(--text-muted); height: auto; }
 
-    /* Today's column highlight.
-       Scoped away from .cov-cell: the coverage heatmap cells carry .today too,
-       and a solid fill here would paint over their status colors (covered/
-       fragile/uncovered). Those cells get an outline instead (see .cov-cell.today). */
-    th.today, td.today:not(.cov-cell) {
-      background: #ede9ff !important;
-      box-shadow: inset 0 0 0 1px #d6c9f5;
-    }
-    th.today { color: var(--brand-ink); }
-    tr:hover td.today:not(.cov-cell) { background: #ddd2fb !important; }
+    #grid td.cell { position: relative; cursor: pointer; user-select: none; -webkit-user-select: none; min-width: 66px; }
+    #grid td.cell:hover { background: var(--hover-soft); }
+    #grid td.cell:focus { outline: none; box-shadow: inset 0 0 0 3px var(--sp-focus); }
+    .chip { display: inline-block; min-width: 50px; padding: 5px 9px; border-radius: 6px; font-weight: 800; font-size: 14px; letter-spacing: 0.02em; color: var(--sp-chip-ink); line-height: 1.2; }
+    .k-A { background: var(--sp-a); }
+    .k-B { background: var(--sp-b); color: var(--sp-chip-ink-warm); }
+    .k-C { background: var(--sp-c); color: var(--sp-chip-ink-warm); }
+    .k-ME { background: var(--sp-me); }
+    .k-DMG { background: var(--sp-dmg); }
+    .k-XP { background: var(--sp-xp); }
+    .k-999 { background: var(--sp-999); }
+    .k-LC { background: var(--sp-lc); }
+    .k-OG { background: var(--sp-og); }
+    #grid td.rdo { background: var(--sp-off-bg); color: var(--text-faint); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+    #grid td.off, #grid td.tooff { background: var(--sp-off-bg); color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; }
+    #grid td.vac { background: repeating-linear-gradient(135deg, var(--sp-vac-a) 0 8px, var(--sp-vac-b) 8px 16px); color: var(--sp-vac-ink); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; }
+    #grid td.locked { cursor: not-allowed; }
+    /* Asked off: a dashed outline, drawn only while the root says so. Focus is
+       a solid inset ring in another color, so the two never read alike. */
+    body.show-asked #grid td.asked { outline: 2px dashed var(--sp-asked); outline-offset: -5px; }
+    body.show-asked #grid td.asked::after { content: "asked off"; display: block; font-size: 10px; font-weight: 700; color: var(--sp-asked); letter-spacing: 0.04em; line-height: 1; margin-top: 3px; }
+    #grid td.chg::before { content: ""; position: absolute; top: 0; right: 0; border: 5px solid transparent; border-top-color: var(--text); border-right-color: var(--text); }
+    #grid.by-area thead th[data-col] { cursor: pointer; }
+    #grid thead th.sorted { box-shadow: inset 0 -3px 0 var(--sp-accent); }
+    #grid thead th.sorted b::after { content: " \25BE"; color: var(--sp-accent); }
 
-    /* Area code pills */
-    .area-pill {
-      display: inline-block;
-      min-width: 30px;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-weight: 700;
-      font-size: 12px;
-      letter-spacing: 0.03em;
-      color: white;
-      cursor: help;
-    }
-    .area-A     { background: #4D148C; }
-    .area-B     { background: #1d4ed8; }
-    .area-C     { background: #0e7490; }
-    .area-ME    { background: #b45309; }
-    .area-DMG   { background: #dc2626; }
-    .area-CDMG  { background: #9333ea; }
-    .area-FLOAT { background: #047857; }
-    .area-other { background: #6b7280; }
-    .off-cell   { color: var(--text-fainter); font-weight: 600; }
+    #grid tfoot td, #grid tfoot th { height: 32px; font-weight: 700; font-size: 14px; }
+    #grid tfoot .name { font-weight: 600; font-size: 13px; }
+    #grid tfoot tr:first-child > * { border-top: 2px solid var(--border-strong); }
+    #grid tfoot td.z { color: var(--sp-zero); font-weight: 500; }
+    #grid tfoot td.warn { background: var(--sp-a); color: var(--sp-chip-ink); font-weight: 800; }
+    #grid tfoot tr.total > * { background: var(--sp-off-bg); }
+    #grid tfoot tr.open td { color: var(--text-muted); font-weight: 600; }
+    .mini { display: inline-block; min-width: 42px; text-align: center; padding: 1px 7px; border-radius: 5px; font-weight: 800; font-size: 12px; color: var(--sp-chip-ink); margin-right: 6px; }
 
-    .count-total td { font-weight: 700; }
-    .count-label { text-align: left; font-weight: 600; color: var(--text); }
+    .addrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
+    .addrow input { width: 13em; }
+    .addrow .msg { font-size: 12.5px; color: var(--sp-a); font-weight: 600; }
+    .addrow .msg.ok { color: var(--text-muted); }
 
-    /* ── Legend ─────────────────────────────────────────────────────────────── */
-    #legend { margin-top: 4px; margin-bottom: 24px; }
-    .legend-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 10px;
-      padding: 16px 18px;
-    }
-    .legend-item { display: flex; gap: 10px; align-items: flex-start; }
-    .legend-item .legend-pill {
-      flex-shrink: 0;
-      display: inline-block;
-      min-width: 42px;
-      text-align: center;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-weight: 700;
-      font-size: 12px;
-      color: white;
-    }
-    .legend-item .legend-text { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
-    .legend-item .legend-text strong { color: var(--text); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--text-muted); }
+    .legend i { display: inline-block; width: 22px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--border-strong); }
+    .legend .lg-off { background: var(--sp-off-bg); }
+    .legend .lg-vac { background: repeating-linear-gradient(135deg, var(--sp-vac-a) 0 4px, var(--sp-vac-b) 4px 8px); }
+    .legend .lg-asked { background: var(--surface); border: 2px dashed var(--sp-asked); }
+    .legend .lg-chg { background: linear-gradient(225deg, var(--text) 0 32%, var(--surface) 32%); }
+    .legend .lg-focus { background: var(--surface); box-shadow: inset 0 0 0 2px var(--sp-focus); border: 0; }
+    body:not(.show-asked) .lg-asked-item { display: none; }
+    #save-ok { font-size: 12px; color: var(--text-faint); }
 
-    footer {
-      text-align: center;
-      font-size: 11px;
-      color: var(--text-fainter);
-      margin-top: 8px;
-    }
-    /* Coverage panel (PRD #231) */
-    #coverage-body { padding: 4px 0; }
-    .cov-line {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 9px 18px;
-      border-bottom: 1px solid var(--border-soft);
-      font-size: 13px;
-    }
-    .cov-line:last-child { border-bottom: none; }
-    .cov-line { border-left: 4px solid transparent; }
-    .cov-line.cov-cannotskip { border-left-color: #dc2626; }
-    .cov-line.cov-uncovered  { border-left-color: #d97706; }
-    .cov-line.cov-fragile    { border-left-color: #ca8a04; }
-    .cov-line.cov-damagesnosolo { border-left-color: #dc2626; }
-    .cov-line.cov-headcount  { border-left-color: #64748b; }
-    .cov-line.cov-clear      { border-left-color: #16a34a; }
-    .cov-day { font-weight: 700; min-width: 42px; color: var(--text); }
-    .cov-msg { flex: 1; font-weight: 600; }
-    .cov-cannotskip .cov-msg { color: #b91c1c; }
-    .cov-uncovered  .cov-msg { color: #b45309; }
-    .cov-fragile    .cov-msg { color: #a16207; }
-    .cov-damagesnosolo .cov-msg { color: #b91c1c; }
-    .cov-headcount  .cov-msg { color: #475569; }
-    .cov-clear      .cov-msg { color: #15803d; }
-    .cov-rule {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-faint);
-      background: var(--border-soft);
-      border-radius: 999px;
-      padding: 2px 9px;
-      white-space: nowrap;
-    }
-    .cov-line.cov-today { background: var(--surface-2); }
-    #coverage-section { border-top: 4px solid #4D148C; }
+    /* Settings and backup */
+    .settings { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+    .settings summary { cursor: pointer; padding: 12px 16px; font-weight: 700; }
+    .settings .body { padding: 4px 16px 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .settings h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px; }
+    .settings .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .settings p { font-size: 13px; margin-top: 6px; }
+    .settings .msg { font-weight: 600; }
+    .settings .msg.err { color: var(--sp-a); }
+    #import-preview { border: 1px solid var(--border-strong); border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+    #import-preview .row { margin-top: 8px; }
 
-    /* Your scheduling rules panel (#243) */
-    #principles-section { border-top: 4px solid #4D148C; }
-    #principles-body { padding: 4px 0; }
-    .rule-line { display: flex; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border-soft); }
-    .rule-line:last-child { border-bottom: none; }
-    .rule-num {
-      flex-shrink: 0;
-      width: 22px; height: 22px;
-      border-radius: 999px;
-      background: #f0eafb; color: #4D148C;
-      font-size: 12px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .rule-text { display: flex; flex-direction: column; gap: 2px; }
-    .rule-title { font-size: 13px; font-weight: 600; color: var(--text); }
-    .rule-why { font-size: 12px; color: #777; line-height: 1.45; }
+    /* Screenshot view: title, date range, grid and counts only. */
+    body.screenshot .back-link,
+    body.screenshot .bar-1,
+    body.screenshot .bar-2 > :not(#screenshot),
+    body.screenshot .bar-2 .spacer,
+    body.screenshot .view-note,
+    body.screenshot .file-zone,
+    body.screenshot #notices,
+    body.screenshot .brushes,
+    body.screenshot .hint,
+    body.screenshot .addrow,
+    body.screenshot .legend,
+    body.screenshot #save-ok,
+    body.screenshot .settings,
+    body.screenshot #grid .rm,
+    body.screenshot #grid .noid,
+    body.screenshot .theme-toggle { display: none !important; }
+    body.screenshot .bar-2 { background: none; border: 0; padding: 0; justify-content: flex-end; }
+    body.screenshot #grid td.chg::before { display: none; }
+    body.screenshot #grid td.asked { outline: none; }
+    body.screenshot #grid td.asked::after { display: none; }
+    body.screenshot #grid .nm { cursor: default; }
 
-    /* Coverage strip / heatmap (#234) */
-    #coverage-map { padding: 12px 18px 4px; }
-    table.cov-map { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
-    table.cov-map th { padding: 2px 8px; color: var(--text-faint); font-size: 11px; font-weight: 700; text-align: center; }
-    table.cov-map th.today { color: var(--brand-ink); }
-    table.cov-map th.cov-map-area { text-align: left; color: var(--text); min-width: 38px; }
-    .cov-cell { width: 40px; height: 18px; border-radius: 4px; }
-    .cov-cell.today { outline: 2px solid #4D148C; outline-offset: -2px; }
-    .cov-cell-covered    { background: #86efac; }
-    .cov-cell-fragile    { background: #fde047; }
-    .cov-cell-uncovered  { background: #fdba74; }
-    .cov-cell-cannotskip { background: #f87171; }
-    .cov-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--text-faint); }
-    .cov-legend span { display: inline-flex; align-items: center; gap: 5px; }
-    .cov-legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+    /* Below about 900px the range controls may take a row of their own. */
+    @media (max-width: 900px) {
+      .bar-1 { flex-wrap: wrap; }
+      .range-ctl { flex: 1 1 100%; justify-content: flex-start; }
+    }
+    @media (max-width: 700px) {
+      body { padding: 12px 16px; }
+      .bar-2 .spacer { display: none; }
+    }
   </style>
   <link rel="stylesheet" href="theme.css">
   <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
   <script src="lib/theme.js"></script>
 </head>
-<body>
-
-<header>
-  <div style="display:flex;align-items:center;gap:14px">
-    <a href="./" class="back-link">&larr; Dashboard</a>
-    <h1>Schedule Viewer &mdash; Station 849</h1>
-  </div>
-  <span id="today-label"></span>
-</header>
-
-<div class="toolbar">
-  <button class="btn btn-gray" id="loader-toggle" onclick="toggleLoader()">&#128203; Load / Update Schedule</button>
-  <button class="btn btn-gray" id="download-btn" onclick="exportScheduleImage()" style="display:none">&#128247; Download Schedule Image</button>
-</div>
-
-<div id="loader" style="display:none">
-  <div class="panel-body">
-    <label for="schedule-input">Paste Schedule Data</label>
-    <div class="hint-text">
-      Paste tab-separated or markdown-table schedule text. Include the section headings
-      (<strong>Area Assignments</strong>, <strong>Shift Times</strong>, <strong>Staffing Counts</strong>)
-      so each block lands in the right table. Or upload a <code>.md</code>/<code>.txt</code>/<code>.tsv</code> file.
-      Working from a screenshot or Excel file? Hand it to Claude — it returns this canonical markdown
-      (off&nbsp;=&nbsp;&mdash;, single <strong>QA</strong> count row), which you paste here. See
-      <code>docs/adr/0003-schedule-ingest-via-claude.md</code>.
+<body class="show-asked">
+<div class="wrap">
+  <header class="sp-head">
+    <div class="sp-title">
+      <a href="./" class="back-link">&larr; Dashboard</a>
+      <h1>Schedule</h1>
     </div>
-    <textarea id="schedule-input" spellcheck="false" placeholder="Area Assignments&#10;Employee&#9;Sun&#9;Mon&#9;Tue&#9;Wed&#9;Thu&#9;Fri&#9;Sat&#10;Worker 1&#9;ME&#9;ME&#9;—&#9;—&#9;ME&#9;ME&#9;B&#10;..."></textarea>
-    <div class="loader-actions">
-      <button class="btn btn-purple" onclick="loadFromTextarea()">Load Schedule</button>
-      <button class="btn btn-gray" onclick="document.getElementById('file-input').click()">&#8593; Upload File</button>
-      <button class="btn btn-gray" onclick="clearSchedule()">Clear</button>
-      <span id="parse-status"></span>
+    <p class="range-label" id="range-label"></p>
+  </header>
+
+  <div id="unreadable" class="banner err" role="alert" hidden>
+    <b>The schedule saved on this computer cannot be read.</b>
+    Nothing is shown and nothing is saved over it, so it is not lost. Import a backup under Settings and backup to replace it.
+  </div>
+  <div id="save-error" class="banner err" role="alert" hidden>
+    <div id="save-error-full">
+      <b>Your changes are not saved.</b>
+      This browser refused to store the last change, so it will be lost when this page closes. Export a backup under Settings and backup now.
     </div>
-    <input type="file" id="file-input" accept=".md,.txt,.tsv,.csv,.text" onchange="handleFile(this.files[0])">
+    <div id="save-error-stale" hidden>
+      <b>This schedule was changed in another tab or window.</b>
+      To keep that work, this tab has stopped editing and has written nothing over it. Load the latest schedule to carry on. Anything you changed here since then is left out.
+      <div class="acts"><button type="button" class="btn btn-primary" id="reload-latest">Load the latest schedule</button></div>
+    </div>
   </div>
+
+  <section id="planner" class="wrap">
+    <div class="bar bar-1">
+      <div class="modes" role="group" aria-label="What you are planning">
+        <button type="button" id="view-regular" aria-pressed="false">Regular schedule</button>
+        <button type="button" id="view-dates" aria-pressed="true">Specific dates</button>
+      </div>
+      <div class="range-ctl" id="range-ctl">
+        <button type="button" class="btn btn-gray" id="range-prev" title="The same number of days, earlier" aria-label="Earlier">&lsaquo;</button>
+        <label for="range-from">From</label>
+        <input type="date" id="range-from">
+        <label for="range-to">through</label>
+        <input type="date" id="range-to">
+        <button type="button" class="btn btn-gray" id="range-next" title="The same number of days, later" aria-label="Later">&rsaquo;</button>
+        <span class="quick">
+          <button type="button" class="btn btn-gray" data-len="7" title="7 days">7</button>
+          <button type="button" class="btn btn-gray" data-len="10" title="10 days">10</button>
+          <button type="button" class="btn btn-gray" data-len="14" title="14 days">14</button>
+        </span>
+        <button type="button" class="btn btn-gray" id="range-today" title="Start the range today">Today</button>
+        <span class="muted" id="range-count"></span>
+      </div>
+    </div>
+
+    <div class="bar bar-2">
+      <label for="sort">Sort
+        <select id="sort">
+          <option value="list">My order</option>
+          <option value="name">Name A to Z</option>
+          <option value="area">By area</option>
+        </select>
+      </label>
+      <label for="show-asked"><input type="checkbox" id="show-asked" checked> Show asked off</label>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-gray" id="undo" title="Ctrl+Z">Undo</button>
+      <button type="button" class="btn btn-gray" id="clear-areas" title="Empties every area in this view. Days off stay.">Clear areas</button>
+      <button type="button" class="btn btn-gray" id="reset-range" title="Removes your changes for the dates shown, so they follow the regular schedule again">Back to regular schedule</button>
+      <button type="button" class="btn btn-primary" id="screenshot">Screenshot view</button>
+    </div>
+
+    <p class="view-note" id="view-note"></p>
+
+    <div class="file-zone" id="file-zone">
+      <div id="id-prompt" hidden>
+        <p>Type your employee ID once. The page uses it to keep only your reports from the time off file. It stays on this computer.</p>
+        <label for="manager-id-first" class="muted">Your employee ID</label>
+        <input type="text" id="manager-id-first" inputmode="numeric" autocomplete="off">
+        <button type="button" class="btn btn-primary" id="manager-id-first-save">Save</button>
+        <span class="msg err" id="id-prompt-msg"></span>
+      </div>
+      <div id="drop" hidden>
+        <label class="btn btn-gray" for="file-input">Choose the time off file</label>
+        <input type="file" id="file-input" accept=".xls,.xlsx,.csv">
+      </div>
+      <p id="file-status" data-read="0"></p>
+    </div>
+
+    <div id="notices" aria-live="polite"></div>
+
+    <div class="brushes" id="brushes"></div>
+    <p class="hint">Click a day and type: <kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>M</kbd>E <kbd>D</kbd>MG <kbd>X</kbd>press <kbd>9</kbd>99 <kbd>L</kbd>earning Center <kbd>O</kbd>vergoods, <kbd>-</kbd> for a day off, <kbd>Backspace</kbd> to clear. Typing moves to the next day and the arrow keys move anywhere. For 999/B type <kbd>9</kbd> then <kbd>Shift</kbd>+<kbd>B</kbd>. Or pick a color above and click or drag across days. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</p>
+
+    <div class="grid-card">
+      <div class="scroll"><table id="grid"></table></div>
+      <div class="addrow">
+        <input type="text" id="add-name" placeholder="New admin name" aria-label="New admin name" autocomplete="off">
+        <input type="text" id="add-id" placeholder="Employee ID, optional" aria-label="Employee ID, optional" inputmode="numeric" autocomplete="off">
+        <button type="button" class="btn btn-gray" id="add-person">Add admin</button>
+        <span class="msg" id="add-msg"></span>
+      </div>
+    </div>
+
+    <div class="legend" id="legend">
+      <span><i class="lg-off"></i>OFF: regular day off</span>
+      <span><i class="lg-vac"></i>VAC: vacation in the time off file</span>
+      <span><i class="lg-off"></i>OFF from the file: other approved time off</span>
+      <span class="lg-asked-item"><i class="lg-asked"></i>Asked off, not approved yet</span>
+      <span><i class="lg-off"></i>OFF*: a day off you added</span>
+      <span><i class="lg-chg"></i>Corner mark: changed from the regular schedule</span>
+      <span><i class="lg-focus"></i>The day you are typing in</span>
+    </div>
+    <p id="save-ok">Every change saves on this computer as you make it.</p>
+  </section>
+
+  <details class="settings" id="settings">
+    <summary>Settings and backup</summary>
+    <div class="body">
+      <div id="settings-id">
+        <h3>Your employee ID</h3>
+        <div class="row">
+          <input type="text" id="manager-id" inputmode="numeric" autocomplete="off" aria-label="Your employee ID">
+          <button type="button" class="btn btn-gray" id="manager-id-save">Save ID</button>
+        </div>
+        <p class="muted">The time off file keeps only rows that report to this ID. Changing it clears the kept rows, so drop the file again after.</p>
+        <p class="msg" id="manager-id-msg"></p>
+      </div>
+      <div id="settings-left">
+        <h3>Left out of the time off notice</h3>
+        <p id="left-out-text"></p>
+        <div class="row"><button type="button" class="btn btn-gray" id="clear-left-out">Show them again</button></div>
+      </div>
+      <div id="settings-backup">
+        <h3>Backup</h3>
+        <div class="row">
+          <button type="button" class="btn btn-gray" id="export">Export a backup</button>
+          <label class="btn btn-gray" for="import-input">Import a backup</label>
+          <input type="file" id="import-input" accept=".json,application/json" hidden>
+        </div>
+        <p class="muted" id="last-export"></p>
+        <div id="import-preview" hidden>
+          <p id="import-summary"></p>
+          <div class="row">
+            <button type="button" class="btn btn-primary" id="import-confirm">Replace with this backup</button>
+            <button type="button" class="btn btn-gray" id="import-cancel">Cancel</button>
+          </div>
+        </div>
+        <p class="msg" id="backup-msg"></p>
+      </div>
+    </div>
+  </details>
 </div>
 
-<div id="empty-state">
-  <span class="icon">&#128197;</span>
-  <h2>No schedule loaded</h2>
-  <p>Open <strong>Load / Update Schedule</strong> above and paste this week&rsquo;s schedule to get started.</p>
-</div>
-
-<!-- COVERAGE (analyzeWeek findings, cited to principles.md) -->
-<div class="section" id="coverage-section" style="display:none">
-  <div class="section-header">
-    <h2>&#9888; Coverage</h2>
-    <span class="meta" id="coverage-meta"></span>
-  </div>
-  <div id="coverage-map"></div>
-  <div id="coverage-body"></div>
-</div>
-
-<!-- YOUR SCHEDULING RULES (read-only mirror of principles.md, PRD #241) -->
-<div class="section" id="principles-section">
-  <div class="section-header">
-    <h2>Your scheduling rules</h2>
-    <span class="meta">what the critique judges against</span>
-  </div>
-  <div id="principles-body"></div>
-</div>
-
-<!-- AREA ASSIGNMENTS -->
-<div class="section" id="area-section" style="display:none">
-  <div class="section-header">
-    <h2>Area Assignments</h2>
-    <span class="meta" id="area-meta"></span>
-  </div>
-  <div class="table-wrap"><table id="area-table"></table></div>
-</div>
-
-<!-- MODIFIED HELPERS -->
-<div class="section" id="helpers-section" style="display:none">
-  <div class="section-header">
-    <h2>Modified Helpers</h2>
-    <span class="meta" id="helpers-meta"></span>
-  </div>
-  <div class="table-wrap"><table id="helpers-table"></table></div>
-</div>
-
-<!-- SHIFT TIMES -->
-<div class="section" id="shift-section" style="display:none">
-  <div class="section-header">
-    <h2>Shift Times</h2>
-    <span class="meta">Scheduled hours per day</span>
-  </div>
-  <div class="table-wrap"><table id="shift-table"></table></div>
-</div>
-
-<!-- STAFFING COUNTS -->
-<div class="section" id="counts-section" style="display:none">
-  <div class="section-header">
-    <h2>Staffing Counts</h2>
-    <span class="meta">QA / Temps / Total per day</span>
-  </div>
-  <div class="table-wrap"><table id="counts-table"></table></div>
-</div>
-
-<!-- LEGEND -->
-<div class="section" id="legend" style="display:none">
-  <div class="section-header">
-    <h2>Area Code Legend</h2>
-  </div>
-  <div class="legend-grid" id="legend-grid"></div>
-</div>
-
-<footer>Station 849 / NPHO &mdash; Internal Use Only</footer>
-
-<script src="lib/tool-helpers.js"></script>
-<script src="lib/schedule-coverage.js"></script>
-<script src="lib/schedule-analysis.js"></script>
-<script src="lib/schedule-principles.js"></script>
-<script src="lib/schedule-data.js"></script>
-<script src="lib/schedule-export.js"></script>
-<script src="lib/table-sort.js"></script>
+<script src="lib/csv.js"></script>
+<script src="lib/xlsx.js"></script>
+<script src="lib/xls.js"></script>
+<script src="lib/spreadsheet.js"></script>
+<script src="lib/people.js"></script>
+<script src="lib/time-off-report.js"></script>
+<script src="lib/schedule-planner.js"></script>
+<script src="lib/schedule-planner-store.js"></script>
 <script>
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-const sched = ToolHelpers.createScheduleStore();
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+(function () {
+  'use strict';
+  // Wiring only: every rule is in lib/schedule-planner.js.
+  var P = window.SchedulePlanner;
+  var Store = window.SchedulePlannerStore;
+  var TOR = window.TimeOffReport;
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var UNDO_MAX = 100;
+  var VIEW_KEYS = ['view', 'from', 'len', 'sort', 'showAskedOff'];
+  var KEYS = {};
+  var AREA = {};
+  P.AREAS.forEach(function (a) { KEYS[a.key] = a.code; AREA[a.code] = a; });
+  var $ = function (id) { return document.getElementById(id); };
 
-// Area code legend (descriptions from CONTEXT.md). Keys are normalized (uppercase,
-// slash preserved) so "C/DMG" and "ME" both resolve.
-const AREA_LEGEND = {
-  'A':     { cls: 'area-A',    name: 'Cage A',      desc: 'High VAL cage audits, 100/200 rollers, controlled labels, red shelf, closures, smalls' },
-  'B':     { cls: 'area-B',    name: 'Cage B',      desc: 'Closure pallets, 999s/FRO, 12/02 pallets, 300/400 rollers, closure scans, packages to belts' },
-  'C':     { cls: 'area-C',    name: 'Cage C',      desc: 'Leftover damages, 999s/FRO support, 500/600 rollers, closures, misloads, 7000s' },
-  'ME':    { cls: 'area-ME',   name: 'Middle Earth', desc: 'Address updates, intercepts, relabels, repacks, overgoods, chute flow, 300/400 rollers, 3399 audits' },
-  'DMG':   { cls: 'area-DMG',  name: 'Damages',     desc: 'Primary damage processing' },
-  'C/DMG': { cls: 'area-CDMG', name: 'Combo C + Damages', desc: 'Area C duties combined with damage processing' },
-  'FLOAT': { cls: 'area-FLOAT', name: 'Floater',    desc: 'Belts, break relief, C backstop, absorbs the first callout (Principle 19)' },
-  '—':     { cls: '',          name: 'Off',         desc: 'Not scheduled' },
-};
-
-// ─── PARSER ─────────────────────────────────────────────────────────────────────
-// parseScheduleInput lives in lib/schedule-coverage.js (issues #78, #328) so the Schedule
-// Viewer and the dashboard hub parse identically — single-source principle. The
-// interface is unchanged: raw text in, { days, areas, shifts, counts } out. It is
-// a pure function (no DOM, no side effects) and unit-tested via tests/schedule.test.js.
-const parseScheduleInput = ScheduleCoverage.parseScheduleInput;
-const normalizeCode = ToolHelpers.normalizeCode;
-const isOff = ToolHelpers.isOff;
-const areaClass = ToolHelpers.areaClass;
-const todayIndex = ToolHelpers.todayIndex;
-
-// ─── RENDER ─────────────────────────────────────────────────────────────────────
-const esc = ToolHelpers.escapeHtml;
-
-// Last rendered parsed schedule — read by exportScheduleImage() so the download
-// reflects exactly what's on screen. Set on every render.
-let __currentData = null;
-
-function renderSchedule(data) {
-  const helpers = data.helpers || []; // pre-#546 stores parsed without a helpers key
-  const hasAny = data.areas.length || data.shifts.length || data.counts.length || helpers.length;
-  const tIdx = todayIndex();
-  __currentData = data;
-
-  document.getElementById('empty-state').style.display = hasAny ? 'none' : 'block';
-  // The download button only makes sense once there's an assignment grid to export.
-  const dl = document.getElementById('download-btn');
-  if (dl) dl.style.display = data.areas.length ? 'inline-flex' : 'none';
-
-  renderCoverage(data, tIdx);
-  renderAreaTable(data.areas, tIdx);
-  renderHelpersTable(helpers, tIdx);
-  renderShiftTable(data.shifts, tIdx);
-  renderCountsTable(data.counts, tIdx);
-  renderLegend(data.areas, hasAny);
-
-  document.getElementById('area-section').style.display   = data.areas.length  ? 'block' : 'none';
-  document.getElementById('helpers-section').style.display = helpers.length    ? 'block' : 'none';
-  document.getElementById('shift-section').style.display  = data.shifts.length ? 'block' : 'none';
-  document.getElementById('counts-section').style.display = data.counts.length ? 'block' : 'none';
-  document.getElementById('legend').style.display         = (data.areas.length || data.shifts.length) ? 'block' : 'none';
-
-  wireHeaderSort();
-}
-
-// Header sort (shared lib/table-sort.js). Lets you re-order the Area, Shift and
-// Counts grids by the Employee/Count column or by any day column. Display-only:
-// it re-orders the rendered DOM rows and never touches parsed schedule data or
-// coverage analysis. The listener is delegated on the stable <table> element, so
-// it survives the innerHTML rebuilds these tables do on each render; wiring runs
-// once (guarded) and re-marking the headers happens in headerRow()'s markup.
-let __schedSortWired = false;
-function wireHeaderSort() {
-  if (typeof TableSort === 'undefined') return;
-  ['area-table', 'helpers-table', 'shift-table', 'counts-table'].forEach(function (id) {
-    const table = document.getElementById(id);
-    if (!table || table._sortWired) return;
-    // col0 -> first cell; dN -> the (N+1)th cell (day columns after the label).
-    TableSort.attachTableSort(table, {
-      getValue: function (r, key) {
-        let idx = 0;
-        if (key && key.charAt(0) === 'd') idx = parseInt(key.slice(1), 10) + 1;
-        const cell = r.children[idx];
-        return cell ? cell.textContent.trim() : '';
-      },
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  // Local calendar date from the local clock. Never toISOString for a date.
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
-    table._sortWired = true;
-  });
-  __schedSortWired = true;
-}
+  }
+  function md(date) { return Number(date.slice(5, 7)) + '/' + Number(date.slice(8, 10)); }
+  function mdy(date) { return md(date) + '/' + date.slice(0, 4); }
+  function dayLabel(date) { return DAYS[P.weekdayOf(date)] + ' ' + md(date); }
 
-// Coverage panel — surfaces analyzeWeek findings in the tab, citing the
-// principles.md rule behind each (PRD #231). Shown whenever a schedule is
-// loaded: lists each day's findings (cannot-skip / uncovered / fragile /
-// headcount), most-severe first; a green all-clear line when the week has no
-// flags; hidden only when no schedule is loaded. (#233)
-function renderCoverage(data, tIdx) {
-  const section = document.getElementById('coverage-section');
-  const body = document.getElementById('coverage-body');
-  const meta = document.getElementById('coverage-meta');
+  var storage = null;
+  try { storage = window.localStorage; } catch (e) { storage = null; }
+  var store = Store.createStore(storage);
 
-  if (!data.areas.length || !window.ScheduleAnalysis) {
-    // no schedule → graceful hide. Same hide when lib/schedule-analysis.js
-    // itself is absent (issue 499: the hosted dashboard build excludes it —
-    // it carries the real-name Solo-Capable Runners list from Scheduling
-    // Principle 4 — so the public schedule.html tab degrades to "no
-    // coverage panel" rather than throwing).
-    section.style.display = 'none';
-    body.innerHTML = '';
-    document.getElementById('coverage-map').innerHTML = '';
-    meta.textContent = '';
-    return;
+  // ---- page state -------------------------------------------------------
+  var loaded = store.load();
+  var readOnly = loaded.status === 'unreadable';
+  var state = loaded.state;
+  var undoStack = [];
+  var saveFailed = false;
+  var stale = false;         // another tab or window saved since this one loaded: no edits, no writes
+  var rowOrder = null;       // held still while typing; recomputed on sort, day, view, range or people changes
+  var sortDate = '';         // the day heading picked for By area (dates view)
+  var sortWeekday = 0;       // the same, regular view
+  var brush = null;          // null: a click only selects the day
+  var focusKey = '';         // 'person|date' or 'person|weekday'
+  var lastTyped = null;      // the cell Shift plus a key adds to
+  var drag = null;
+  var armedRemove = null;
+  var armedClear = false;
+  var editing = null;        // { id, error }
+  var screenshot = false;
+  var dropCount = 0;
+  var dropMsg = null;        // { kind: 'err' | 'warn', text }
+  var fileNotices = false;   // a drop happened in this page; its collision and status notices are worked out fresh each render
+  var dismissed = { collisions: {}, statuses: {} };
+  var pendingImport = null;
+  var personSeq = 0;
+
+  function newPersonId() {
+    personSeq += 1;
+    return 'sp-' + Date.now().toString(36) + '-' + personSeq + '-' + Math.random().toString(36).slice(2, 7);
   }
 
-  const week = ScheduleAnalysis.analyzeWeek(data);
-  renderCoverageMap(week, tIdx);       // layered coverage strip (#234)
-
-  const lines = [];
-  week.days.forEach(function (d) {
-    ScheduleCoverage.summarize(d).forEach(function (f) {
-      lines.push({ weekday: d.weekday || DAYS[d.weekdayIndex], today: d.weekdayIndex === tIdx, finding: f });
-    });
-  });
-
-  section.style.display = 'block';
-  if (!lines.length) {                 // schedule loaded, no flags → reassurance
-    meta.textContent = 'all clear';
-    body.innerHTML = '<div class="cov-line cov-clear"><span class="cov-msg">' +
-      '✓ All sort areas covered — no gaps this week.</span></div>';
-    return;
+  function isRegular() { return state.settings.view === 'regular'; }
+  function dates() { return P.rangeDates(state.settings.from, state.settings.len); }
+  function personById(id) {
+    for (var i = 0; i < state.people.length; i++) if (state.people[i].id === id) return state.people[i];
+    return null;
   }
 
-  meta.textContent = lines.length + ' issue' + (lines.length === 1 ? '' : 's');
-  body.innerHTML = lines.map(function (l) {
-    const f = l.finding;
-    const rule = f.principle != null
-      ? '<span class="cov-rule">rule ' + esc(String(f.principle)) + '</span>'
-      : '';
-    return '<div class="cov-line cov-' + esc(f.type.toLowerCase()) + (l.today ? ' cov-today' : '') + '">' +
-      '<span class="cov-day">' + esc(l.weekday) + '</span>' +
-      '<span class="cov-msg">' + esc(f.message) + '</span>' +
-      rule +
-      '</div>';
-  }).join('');
-}
-
-// Coverage strip (#234) — a per-day heatmap layered with the grid: rows are the
-// canonical sort areas, columns the days, each cell tinted by coverage health
-// (statusByArea). Additive — the assignment grid keeps its A/B/C/ME/DMG colors.
-function renderCoverageMap(week, tIdx) {
-  const host = document.getElementById('coverage-map');
-  const areas = ScheduleCoverage.SORT_AREAS;
-  let html = '<table class="cov-map"><thead><tr><th class="cov-map-area">Area</th>';
-  DAYS.forEach(function (d, i) { html += '<th class="' + (i === tIdx ? 'today' : '') + '">' + d + '</th>'; });
-  html += '</tr></thead><tbody>';
-  areas.forEach(function (area) {
-    html += '<tr><th class="cov-map-area">' + esc(area) + '</th>';
-    week.days.forEach(function (dy, i) {
-      const status = ScheduleCoverage.statusByArea(dy, areas)[area];
-      const cls = 'cov-cell cov-cell-' + status.replace('cannot-skip', 'cannotskip') + (i === tIdx ? ' today' : '');
-      html += '<td class="' + cls + '" title="' + esc(area + ' — ' + status) + '"></td>';
-    });
-    html += '</tr>';
-  });
-  html += '</tbody></table>' +
-    '<div class="cov-legend">' +
-    '<span><i class="cov-cell-covered"></i>covered</span>' +
-    '<span><i class="cov-cell-fragile"></i>fragile</span>' +
-    '<span><i class="cov-cell-uncovered"></i>uncovered</span>' +
-    '<span><i class="cov-cell-cannotskip"></i>cage A uncovered</span>' +
-    '</div>';
-  host.innerHTML = html;
-}
-
-// Read-only "Your scheduling rules" panel (#243) — renders the principles mirror
-// (lib/schedule-principles.js, kept in sync with scheduling/principles.md). The
-// tab never edits rules; that's Claude's job (ADR-0010).
-function renderPrinciples() {
-  const body = document.getElementById('principles-body');
-  const rules = (window.SchedulePrinciples && SchedulePrinciples.PRINCIPLES) || [];
-  body.innerHTML = rules.map(function (r) {
-    return '<div class="rule-line">' +
-      '<span class="rule-num">' + esc(String(r.number)) + '</span>' +
-      '<span class="rule-text"><span class="rule-title">' + esc(r.title) + '</span>' +
-      '<span class="rule-why">' + esc(r.rationale) + '</span></span>' +
-      '</div>';
-  }).join('');
-}
-
-function headerRow(firstCol, tIdx) {
-  // Headers are sortable via the shared lib/table-sort.js (see wireHeaderSort).
-  // data-sort="col0" is the name/label column; each day is data-sort="dN".
-  let html = '<thead><tr><th class="name-col sortable" data-sort="col0">' + esc(firstCol) + '</th>';
-  DAYS.forEach((d, i) => {
-    const cls = 'sortable' + (i === tIdx ? ' today' : '');
-    html += '<th class="' + cls + '" data-sort="d' + i + '">' + d + '</th>';
-  });
-  return html + '</tr></thead>';
-}
-
-function renderAreaTable(rows, tIdx) {
-  const table = document.getElementById('area-table');
-  document.getElementById('area-meta').textContent = rows.length + ' employee' + (rows.length === 1 ? '' : 's');
-  let html = headerRow('Employee', tIdx) + '<tbody>';
-  rows.forEach(r => {
-    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
-    r.cells.forEach((c, i) => {
-      const cls = (i === tIdx ? 'today' : '');
-      html += '<td class="' + cls + '">' + areaCellHtml(c) + '</td>';
-    });
-    html += '</tr>';
-  });
-  table.innerHTML = html + '</tbody>';
-}
-
-// Modified Helpers grid (#546) — same day-cell rendering as the QA grid, but a
-// separate table fed by parsed.helpers: helpers hold fixed area seats
-// (Principle 15) yet are NOT QA area bodies, so they stay out of the Area
-// Assignments rows, the coverage analysis, and the QA counts.
-function renderHelpersTable(rows, tIdx) {
-  const table = document.getElementById('helpers-table');
-  document.getElementById('helpers-meta').textContent = rows.length + ' helper' + (rows.length === 1 ? '' : 's') + ' — fixed area seats, not counted as QA';
-  let html = headerRow('Helper', tIdx) + '<tbody>';
-  rows.forEach(r => {
-    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
-    r.cells.forEach((c, i) => {
-      const cls = (i === tIdx ? 'today' : '');
-      html += '<td class="' + cls + '">' + areaCellHtml(c) + '</td>';
-    });
-    html += '</tr>';
-  });
-  table.innerHTML = html + '</tbody>';
-}
-
-function areaCellHtml(code) {
-  if (isOff(code)) return '<span class="off-cell">&mdash;</span>';
-  const norm = normalizeCode(code);
-  const entry = AREA_LEGEND[norm];
-  const title = entry ? entry.name + ' — ' + entry.desc : 'Area ' + code;
-  return '<span class="area-pill ' + areaClass(code) + '" title="' + esc(title) + '">' + esc(code.trim()) + '</span>';
-}
-
-function renderShiftTable(rows, tIdx) {
-  const table = document.getElementById('shift-table');
-  let html = headerRow('Employee', tIdx) + '<tbody>';
-  rows.forEach(r => {
-    html += '<tr><td class="name-col">' + esc(r.employee) + '</td>';
-    r.cells.forEach((c, i) => {
-      const cls = (i === tIdx ? 'today' : '');
-      const val = isOff(c) ? '<span class="off-cell">&mdash;</span>' : esc(c);
-      html += '<td class="' + cls + '">' + val + '</td>';
-    });
-    html += '</tr>';
-  });
-  table.innerHTML = html + '</tbody>';
-}
-
-function renderCountsTable(rows, tIdx) {
-  const table = document.getElementById('counts-table');
-  let html = headerRow('Count', tIdx) + '<tbody>';
-  rows.forEach(r => {
-    const isTotal = /total/i.test(r.label);
-    html += '<tr' + (isTotal ? ' class="count-total"' : '') + '><td class="count-label">' + esc(r.label) + '</td>';
-    r.cells.forEach((c, i) => {
-      const cls = (i === tIdx ? 'today' : '');
-      html += '<td class="' + cls + '">' + esc(c || '0') + '</td>';
-    });
-    html += '</tr>';
-  });
-  table.innerHTML = html + '</tbody>';
-}
-
-// Show the full legend, but only for codes that actually appear in the schedule
-// (plus the Off marker). Unknown codes still render with a generic entry.
-function renderLegend(areaRows, hasAny) {
-  const grid = document.getElementById('legend-grid');
-  if (!hasAny) { grid.innerHTML = ''; return; }
-
-  const used = new Set();
-  areaRows.forEach(r => r.cells.forEach(c => {
-    if (!isOff(c)) used.add(normalizeCode(c));
-  }));
-
-  // Preserve the canonical legend order; append any unknown used codes after.
-  const order = Object.keys(AREA_LEGEND);
-  const ordered = order.filter(k => used.has(k) || k === '—');
-  used.forEach(k => { if (!order.includes(k)) ordered.push(k); });
-
-  grid.innerHTML = ordered.map(code => {
-    const entry = AREA_LEGEND[code] || { cls: 'area-other', name: 'Area ' + code, desc: '' };
-    const pillCls = entry.cls || 'area-other';
-    const pillText = code === '—' ? '—' : code;
-    return '<div class="legend-item">' +
-      '<span class="legend-pill ' + pillCls + '">' + esc(pillText) + '</span>' +
-      '<span class="legend-text"><strong>' + esc(entry.name) + '</strong>' +
-        (entry.desc ? ' — ' + esc(entry.desc) : '') + '</span>' +
-      '</div>';
-  }).join('');
-}
-
-// ─── LOAD / PERSIST ───────────────────────────────────────────────────────────
-function setStatus(msg, ok) {
-  const el = document.getElementById('parse-status');
-  el.textContent = msg;
-  el.className = ok ? 'ok' : 'err';
-  if (msg) setTimeout(() => { if (el.textContent === msg) { el.textContent = ''; el.className = ''; } }, 4000);
-}
-
-function loadFromText(raw, persist) {
-  const data = parseScheduleInput(raw);
-  if (!data.areas.length && !data.shifts.length && !data.counts.length) {
-    setStatus('No schedule data found. Check that section headings are present.', false);
-    return false;
+  // ---- saving and undo --------------------------------------------------
+  function persist() {
+    if (readOnly || stale) return false;
+    var ok = false;
+    try { ok = store.save(state); } catch (e) { ok = false; }
+    if (!ok && store.lastError === 'changed-elsewhere') { stale = true; saveFailed = false; return false; }
+    saveFailed = !ok;
+    return ok;
   }
-  renderSchedule(data);
-  if (persist) {
-    // Stamp the manual override with the current schedule version, so it stays
-    // honored until the official schedule changes, then auto-supersedes. (schedule auto-sync)
-    sched.set(raw);
-    sched.setVersion((window.ScheduleData && ScheduleData.VERSION) || '');
-  }
-  const parts = [];
-  if (data.areas.length)  parts.push(data.areas.length + ' assignment rows');
-  if ((data.helpers || []).length) parts.push(data.helpers.length + ' helper rows');
-  if (data.shifts.length) parts.push(data.shifts.length + ' shift rows');
-  if (data.counts.length) parts.push(data.counts.length + ' count rows');
-  setStatus('✓ Loaded ' + parts.join(', '), true);
-  return true;
-}
 
-function loadFromTextarea() {
-  const raw = document.getElementById('schedule-input').value;
-  if (loadFromText(raw, true)) {
-    document.getElementById('loader').style.display = 'none';
+  // Another tab saved. Stop editing at once and say so; the stored value is
+  // never written over from here until the person loads the latest.
+  function markStale() {
+    if (stale) return;
+    stale = true;
+    armedRemove = null; armedClear = false; editing = null; lastTyped = null; drag = null;
+    render();
   }
-}
 
-function handleFile(file) {
-  if (!file) return;
-  ToolHelpers.readTextFile(file, 'UTF-8').then(function (text) {
-    document.getElementById('schedule-input').value = text;
-    if (loadFromText(text, true)) {
-      document.getElementById('loader').style.display = 'none';
+  // Take whatever is stored now as the truth and start from it.
+  function loadLatest() {
+    var l = store.load();
+    readOnly = l.status === 'unreadable';
+    state = l.state;
+    stale = false; saveFailed = false;
+    undoStack = []; rowOrder = null; lastTyped = null; drag = null;
+    armedRemove = null; armedClear = false; editing = null; pendingImport = null;
+    fileNotices = false; dismissed = { collisions: {}, statuses: {} }; dropMsg = null;
+    if (!readOnly && !state.settings.from) state = P.setSettings(state, { from: today() });
+    render();
+  }
+
+  function pushUndo(prev) {
+    undoStack.push(prev);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+  }
+
+  // Every data change goes through here: one undo entry, one save, one render.
+  function commit(next, opts) {
+    var o = opts || {};
+    if (readOnly || stale || !next || next === state) return false;
+    pushUndo(state);
+    state = next;
+    if (o.reorder) rowOrder = null;
+    // Only a keystroke on a cell keeps "the cell just typed in"; any other
+    // change (people, a file, clear, reset, settings) forgets it.
+    if (!o.keepTyped) lastTyped = null;
+    armedRemove = null;
+    persist();
+    render();
+    return true;
+  }
+
+  // What you are looking at (view, range, sort, show asked off) saves but is
+  // not an undo step.
+  function setView(patch) {
+    if (readOnly || stale) return;
+    lastTyped = null;
+    var next = P.setSettings(state, patch);
+    if (next === state) { render(); return; }
+    state = next;
+    rowOrder = null;
+    persist();
+    render();
+  }
+
+  function undo() {
+    if (readOnly || stale || !undoStack.length) return;
+    var prev = undoStack.pop();
+    var keep = {};
+    VIEW_KEYS.forEach(function (k) { keep[k] = state.settings[k]; });
+    state = Object.assign({}, prev, { settings: Object.assign({}, prev.settings, keep) });
+    armedRemove = null; armedClear = false; editing = null; lastTyped = null;
+    persist();
+    render();
+  }
+
+  // ---- first run --------------------------------------------------------
+  if (!readOnly) {
+    if (loaded.status === 'empty' && window.People) {
+      try {
+        var ps = window.People.createStore(storage);
+        if (ps.status() === 'ok') {
+          var seeded = state;
+          ps.list().filter(function (p) { return p.mine === true; }).forEach(function (p) {
+            seeded = P.addPerson(seeded, { name: p.name, employeeId: p.employeeId || '' }, newPersonId());
+          });
+          if (seeded !== state) { state = seeded; persist(); }
+        }
+      } catch (e) { /* an unreadable People list means start empty */ }
     }
-  }).catch(function () { /* unreadable file — same silent no-op as the old raw FileReader */ });
-  document.getElementById('file-input').value = '';
-}
-
-function clearSchedule() {
-  // Clearing a manual override drops back to the repo-embedded current schedule
-  // (not a blank grid) — the dashboard's job is to show the official week.
-  sched.clear();
-  const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
-  document.getElementById('schedule-input').value = embedded;
-  if (embedded) {
-    loadFromText(embedded, false);
-    setStatus('Reset to current schedule', true);
-  } else {
-    renderSchedule({ days: DAYS.slice(), areas: [], shifts: [], counts: [] });
-    setStatus('Cleared', true);
+    if (!state.settings.from) state = P.setSettings(state, { from: today() });
   }
-}
 
-function toggleLoader() {
-  const el = document.getElementById('loader');
-  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
-}
-
-// ─── DOWNLOAD IMAGE ─────────────────────────────────────────────────────────────
-// Renders JUST the Area Assignments + Modified Helpers grids to a clean, light-
-// themed PNG for pasting into email/messages or printing. Logic (the SVG) lives
-// in lib/schedule-export.js; here we only feed it the on-screen data and
-// rasterise the returned SVG through a <canvas>. Colors come from the tool's own
-// areaClass() so the image matches the pills exactly (single source).
-function schedExportColorFor(code) {
-  if (isOff(code)) return null;
-  const C = ScheduleExport.DEFAULT_COLORS;
-  return C[areaClass(code)] || C['area-other'];
-}
-
-function exportScheduleImage() {
-  if (typeof ScheduleExport === 'undefined') return;
-  const data = __currentData;
-  if (!data || !data.areas || !data.areas.length) {
-    setStatus('Load a schedule first', false);
-    return;
+  // ---- cell references and edits ----------------------------------------
+  function refOf(td) {
+    var wd = td.getAttribute('data-weekday');
+    return {
+      person: td.getAttribute('data-person'),
+      date: td.getAttribute('data-date') || '',
+      weekday: wd === null ? -1 : Number(wd),
+    };
   }
-  const sections = [{ label: 'Area Assignments', nameHeader: 'Employee', rows: data.areas }];
-  const helpers = data.helpers || [];
-  if (helpers.length) sections.push({ label: 'Modified Helpers', nameHeader: 'Helper', rows: helpers });
+  function refKey(ref) { return ref.person + '|' + (ref.date || ref.weekday); }
+  function isReg(ref) { return !ref.date; }
+  function shown(ref) {
+    return isReg(ref) ? P.resolveRegular(state, ref.person, ref.weekday) : P.resolve(state, ref.person, ref.date);
+  }
+  function holdsOnly(ref, code) {
+    var r = shown(ref);
+    return r.kind === 'area' && r.areas.length === 1 && r.areas[0] === code;
+  }
+  function isOffHere(ref) {
+    var k = shown(ref).kind;
+    return isReg(ref) ? k === 'regularOff' : (k === 'dayoff' || k === 'regularOff');
+  }
+  function isHandOff(ref) {
+    var k = shown(ref).kind;
+    return isReg(ref) ? k === 'regularOff' : k === 'dayoff';
+  }
 
-  // 3x pixel density: the builder emits an SVG whose width/height are the target
-  // pixel size (viewBox stays logical), so the browser rasterises the vector at
-  // full resolution. We then paint it 1:1 onto a same-size canvas — no upscaling
-  // of a low-res bitmap, so text and pills stay crisp for print/paste.
-  const out = ScheduleExport.buildScheduleSVG({
-    title: 'QA Schedule',
-    subtitle: 'Station 849 / NPHO',
-    days: data.days || DAYS,
-    sections: sections,
-    colorFor: schedExportColorFor,
-    isOff: isOff,
-    scale: 3,
-  });
-
-  const svgBlob = new Blob([out.svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(svgBlob);
-  const img = new Image();
-  img.onload = function () {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = out.width;
-      canvas.height = out.height;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, out.width, out.height);
-      ctx.drawImage(img, 0, 0, out.width, out.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(function (blob) {
-        if (!blob) { setStatus('Could not create image', false); return; }
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'qa-schedule.png';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-        setStatus('✓ Schedule image downloaded', true);
-      }, 'image/png');
-    } catch (e) {
-      URL.revokeObjectURL(url);
-      setStatus('Could not render image', false);
+  // op: 'set' | 'toggle' | 'add' | 'off' | 'offToggle' | 'clear'
+  function edited(s, ref, op, code) {
+    var reg = isReg(ref);
+    if (op === 'set' && holdsOnly(ref, code)) return s;
+    if (op === 'set' || op === 'toggle') {
+      return reg ? P.paintRegular(s, today(), ref.person, ref.weekday, code) : P.paint(s, ref.person, ref.date, code);
     }
-  };
-  img.onerror = function () { URL.revokeObjectURL(url); setStatus('Could not render image', false); };
-  img.src = url;
-}
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-(function init() {
-  document.getElementById('today-label').textContent = 'Today: ' + ToolHelpers.formatDateBadge();
-
-  renderPrinciples(); // read-only rulebook — independent of whether a week is loaded
-
-  // A manually loaded week wins only while its version stamp matches the live
-  // embedded schedule; otherwise the embedded schedule (lib/schedule-data.js)
-  // supersedes it, so a newly published week auto-syncs with no Clear. (schedule auto-sync)
-  const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
-  const embeddedVer = (window.ScheduleData && ScheduleData.VERSION) || '';
-  const raw = ToolHelpers.resolveScheduleRaw({
-    saved: sched.get(), savedVer: sched.getVersion(),
-    embedded: embedded, embeddedVer: embeddedVer,
-  });
-  if (raw) {
-    document.getElementById('schedule-input').value = raw;
-    loadFromText(raw, false);
-  } else {
-    renderSchedule({ days: DAYS.slice(), areas: [], shifts: [], counts: [] });
+    if (op === 'add') {
+      return reg ? P.paintRegular(s, today(), ref.person, ref.weekday, code, { add: true }) : P.paint(s, ref.person, ref.date, code, { add: true });
+    }
+    if (op === 'off' && isOffHere(ref)) return s;
+    if (op === 'off' || op === 'offToggle') {
+      return reg ? P.regularOff(s, today(), ref.person, ref.weekday) : P.dayOff(s, ref.person, ref.date);
+    }
+    if (op === 'clear') {
+      return reg ? P.clearRegular(s, today(), ref.person, ref.weekday) : P.clear(s, ref.person, ref.date);
+    }
+    return s;
   }
+
+  // ---- rendering --------------------------------------------------------
+  function render() {
+    document.body.classList.toggle('show-asked', !!state.settings.showAskedOff);
+    document.body.classList.toggle('screenshot', screenshot);
+    $('unreadable').hidden = !readOnly;
+    $('save-error').hidden = !(saveFailed || stale);
+    $('save-error-full').hidden = stale || !saveFailed;
+    $('save-error-stale').hidden = !stale;
+    $('save-ok').hidden = saveFailed || readOnly || stale;
+    $('planner').hidden = readOnly || stale;
+    $('settings').hidden = stale;
+    if (stale) { $('range-label').textContent = ''; return; }
+    if (readOnly) {
+      $('grid').innerHTML = '';
+      $('range-label').textContent = '';
+      $('settings').open = true;
+      $('settings-id').hidden = true;
+      $('settings-left').hidden = true;
+      $('export').hidden = true;
+      renderBackup();
+      return;
+    }
+    $('settings-id').hidden = false;
+    $('settings-left').hidden = false;
+    $('export').hidden = false;
+    renderBars();
+    renderFileZone();
+    renderNotices();
+    renderBrushes();
+    renderGrid();
+    renderSettings();
+    renderBackup();
+  }
+
+  function renderBars() {
+    var reg = isRegular();
+    var s = state.settings;
+    $('view-regular').setAttribute('aria-pressed', String(reg));
+    $('view-dates').setAttribute('aria-pressed', String(!reg));
+    $('range-ctl').hidden = reg;
+    $('reset-range').hidden = reg;
+    $('sort').value = s.sort;
+    $('show-asked').checked = !!s.showAskedOff;
+    $('show-asked').closest('label').hidden = reg;
+    $('undo').disabled = !undoStack.length;
+    $('clear-areas').textContent = armedClear ? 'Clear every area? Days off stay' : 'Clear areas';
+    $('clear-areas').classList.toggle('armed', armedClear);
+    $('screenshot').textContent = screenshot ? 'Back to editing' : 'Screenshot view';
+    if (reg) {
+      $('range-label').textContent = 'Regular schedule, every week';
+      $('view-note').innerHTML = '<b>Regular schedule.</b> What everyone works every week until you change it here, including regular days off. Every date you have not changed by hand follows it, starting today.';
+    } else {
+      var last = P.addDays(s.from, s.len - 1);
+      var sameYear = s.from.slice(0, 4) === last.slice(0, 4);
+      $('range-label').textContent = sameYear
+        ? dayLabel(s.from) + ' through ' + dayLabel(last) + ', ' + s.from.slice(0, 4)
+        : DAYS[P.weekdayOf(s.from)] + ' ' + mdy(s.from) + ' through ' + DAYS[P.weekdayOf(last)] + ' ' + mdy(last);
+      $('range-from').value = s.from;
+      $('range-to').value = last;
+      $('range-count').textContent = s.len === 1 ? '1 day' : s.len + ' days';
+      Array.prototype.forEach.call(document.querySelectorAll('.quick [data-len]'), function (b) {
+        b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-len')) === s.len));
+      });
+      $('view-note').innerHTML = '<b>Specific dates.</b> Every day starts as the regular schedule with time off laid on top. A change here changes that one date only.';
+    }
+  }
+
+  function renderFileZone() {
+    var reg = isRegular();
+    var noId = !state.settings.managerId;
+    $('file-zone').hidden = reg;
+    $('id-prompt').hidden = !noId;
+    $('drop').hidden = noId;
+    var status = $('file-status');
+    var html = '';
+    if (dropMsg) html += '<span class="msg ' + (dropMsg.kind === 'err' ? 'err' : '') + '">' + esc(dropMsg.text) + '</span>';
+    var t = state.timeOff;
+    if (noId) {
+      html += '';
+    } else if (t) {
+      var run = String(t.runDate || '').split(' ')[0];
+      html += 'Using <b>' + esc(t.fileName || 'the time off file') + '</b>' + (run ? ', run ' + esc(run) : '') + '. ' +
+        t.total + (t.total === 1 ? ' row' : ' rows') + ' in the file, ' + t.mine + ' report to you. Drop a newer file any time; it replaces these rows.';
+    } else {
+      html += 'No time off file yet. Choose it or drop it here: Time Off / Submitted Requests Detail, as it comes.';
+    }
+    status.innerHTML = html;
+    status.setAttribute('data-read', String(dropCount));
+  }
+
+  function collisionKey(c) { return c.personId + '|' + c.date + '|' + c.areas.join('/'); }
+
+  function renderNotices() {
+    var box = $('notices');
+    if (isRegular()) { box.innerHTML = ''; return; }
+    var html = '';
+    // Worked out from the current state on every render, so Undo (or anything
+    // else that changes the kept file) can never leave a notice describing a
+    // state that is gone. A drop in this page switches them on; Dismiss hides
+    // what is listed now.
+    var collisionLines = [];
+    var statusNotice = [];
+    if (fileNotices) {
+      var names = {};
+      state.people.forEach(function (p) { names[p.id] = p.name; });
+      P.collisions(state).forEach(function (c) {
+        if (dismissed.collisions[collisionKey(c)]) return;
+        var r = P.resolve(state, c.personId, c.date);
+        collisionLines.push(names[c.personId] + ', ' + dayLabel(c.date) + ': was ' + c.areas.join('/') + ', now ' + (r.label === 'VAC' ? 'on vacation' : 'off') + '.');
+      });
+      statusNotice = P.unknownStatuses(state).filter(function (s) { return !dismissed.statuses[s]; }).map(function (s) { return s || '(blank)'; });
+    }
+    if (collisionLines.length) {
+      html += '<div class="notice" data-notice="collisions"><p><b>Time off now covers days you had filled.</b> Your entry stays underneath and comes back if a later file drops the date.</p><ul>' +
+        collisionLines.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') +
+        '</ul><div class="acts"><button type="button" class="btn btn-gray" data-act="dismiss-collisions">Dismiss</button></div></div>';
+    }
+    if (statusNotice.length) {
+      html += '<div class="notice" data-notice="statuses"><p><b>The file has a status this page does not know:</b> ' + esc(statusNotice.join(', ')) +
+        '. Those days show as asked off, not as approved time off.</p><div class="acts"><button type="button" class="btn btn-gray" data-act="dismiss-statuses">Dismiss</button></div></div>';
+    }
+    var noIdPeople = state.people.filter(function (p) { return !p.employeeId; });
+    P.unknownPeople(state).forEach(function (u) {
+      var opts = noIdPeople.length
+        ? '<option value="">Link to an admin with no ID</option>' + noIdPeople.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('')
+        : '<option value="">Every admin already has an ID</option>';
+      html += '<div class="notice" data-unknown="' + esc(u.employeeId) + '"><p><b>' + esc(u.name) + '</b>, employee ID ' + esc(u.employeeId) +
+        ', reports to you in the time off file but is not on the grid.</p><div class="acts">' +
+        '<button type="button" class="btn btn-gray" data-act="add-unknown" data-emp="' + esc(u.employeeId) + '" data-name="' + esc(u.name) + '">Add as a new admin</button>' +
+        '<select aria-label="Admin to link"' + (noIdPeople.length ? '' : ' disabled') + '>' + opts + '</select>' +
+        '<button type="button" class="btn btn-gray" data-act="link-unknown" data-emp="' + esc(u.employeeId) + '"' + (noIdPeople.length ? '' : ' disabled') + '>Link</button>' +
+        '<button type="button" class="btn btn-gray" data-act="leave-out" data-emp="' + esc(u.employeeId) + '">Leave out</button></div></div>';
+    });
+    box.innerHTML = html;
+  }
+
+  function renderBrushes() {
+    var reg = isRegular();
+    var list = P.AREAS.map(function (a) { return { id: a.code, label: a.code === 'XP' ? 'Xpress' : (a.code === 'LC' ? 'Learning' : (a.code === 'OG' ? 'Overgoods' : a.code)), cls: 'chip k-' + a.code, title: a.name + ', key ' + a.key.toUpperCase() }; });
+    var html = '<span class="lbl">Pick, then click days</span>';
+    list.forEach(function (b) {
+      html += '<button type="button" class="brush ' + b.cls + '" data-brush="' + b.id + '" aria-pressed="' + (brush === b.id) + '" title="' + esc(b.title) + '">' + esc(b.label) + '</button>';
+    });
+    html += '<span class="sep"></span>';
+    html += '<button type="button" class="brush plain" data-brush="off" aria-pressed="' + (brush === 'off') + '" title="Key -">' + (reg ? 'Regular day off' : 'Day off') + '</button>';
+    html += '<button type="button" class="brush plain" data-brush="clear" aria-pressed="' + (brush === 'clear') + '" title="Key Backspace">Clear</button>';
+    $('brushes').innerHTML = html;
+  }
+
+  function currentOrder(cols) {
+    var ids = state.people.map(function (p) { return p.id; });
+    var fresh = rowOrder && rowOrder.length === ids.length && ids.every(function (id) { return rowOrder.indexOf(id) !== -1; });
+    if (!fresh) {
+      if (isRegular()) rowOrder = P.orderRegular(state, state.settings.sort, sortWeekday);
+      else {
+        var day = cols.some(function (c) { return c.date === sortDate; }) ? sortDate : (cols[0] ? cols[0].date : '');
+        rowOrder = P.order(state, state.settings.sort, day, cols);
+      }
+    }
+    return rowOrder;
+  }
+
+  function sortedCol(cols) {
+    if (state.settings.sort !== 'area') return -1;
+    if (isRegular()) return sortWeekday;
+    for (var i = 0; i < cols.length; i++) if (cols[i].date === sortDate) return i;
+    return 0;
+  }
+
+  function cellHtml(person, col, ci, isToday, wkstart, focusable) {
+    var reg = isRegular();
+    var cls = ['cell'];
+    var inner = '';
+    var tip = '';
+    var label = '';
+    var r;
+    if (reg) {
+      r = P.resolveRegular(state, person.id, col.weekday);
+      if (r.kind === 'regularOff') { cls.push('rdo'); inner = 'OFF'; label = 'regular day off'; }
+    } else {
+      r = P.resolve(state, person.id, col.date);
+      tip = r.tip || '';
+      if (r.kind === 'timeoff') {
+        cls.push('locked', r.label === 'VAC' ? 'vac' : 'tooff');
+        inner = esc(r.label);
+        label = 'time off, locked';
+      } else if (r.kind === 'dayoff') { cls.push('off'); inner = 'OFF*'; label = 'day off you added'; }
+      else if (r.kind === 'regularOff') { cls.push('rdo'); inner = 'OFF'; label = 'regular day off'; }
+      if (r.asked) cls.push('asked');
+      if (r.changed) cls.push('chg');
+    }
+    if (r.kind === 'area') {
+      inner = '<span class="chip k-' + esc(r.areas[0]) + '">' + esc(r.areas.join('/')) + '</span>';
+      label = r.areas.join(' and ');
+    }
+    if (wkstart) cls.push('wkstart');
+    if (isToday) cls.push('is-today');
+    var key = person.id + '|' + (reg ? col.weekday : col.date);
+    var heading = reg ? DAYS[col.weekday] : dayLabel(col.date);
+    var aria = person.name + ', ' + heading + ': ' + (label || 'not placed yet');
+    return '<td class="' + cls.join(' ') + '" data-person="' + esc(person.id) + '" ' +
+      (reg ? 'data-weekday="' + col.weekday + '"' : 'data-date="' + col.date + '"') +
+      ' data-col="' + ci + '" tabindex="' + (focusable === key ? '0' : '-1') + '"' +
+      (tip ? ' title="' + esc(tip) + '"' : '') + ' aria-label="' + esc(aria) + '">' + inner + '</td>';
+  }
+
+  function nameCellHtml(p) {
+    if (editing && editing.id === p.id) {
+      return '<th class="name" scope="row"><div class="editor">' +
+        '<input type="text" class="ed-name" value="' + esc(p.name) + '" aria-label="Name">' +
+        '<input type="text" class="ed-id" value="' + esc(p.employeeId) + '" placeholder="Employee ID" aria-label="Employee ID" inputmode="numeric">' +
+        '<button type="button" class="btn btn-primary" data-act="save-edit" data-id="' + esc(p.id) + '">Save</button>' +
+        '<button type="button" class="btn btn-gray" data-act="cancel-edit">Cancel</button>' +
+        (editing.error ? '<span class="err">' + esc(editing.error) + '</span>' : '') +
+        '</div></th>';
+    }
+    var noId = state.timeOff && !p.employeeId
+      ? '<span class="noid" title="No employee ID, so the time off file cannot reach this person. Click the name to add one.">no ID</span>' : '';
+    var armed = armedRemove === p.id;
+    return '<th class="name" scope="row"><button type="button" class="nm" data-edit="' + esc(p.id) + '" title="Rename or set the employee ID">' + esc(p.name) + '</button>' + noId +
+      '<button type="button" class="rm' + (armed ? ' armed' : '') + '" data-remove="' + esc(p.id) + '" aria-label="Remove ' + esc(p.name) + '">' + (armed ? 'Remove?' : '&times;') + '</button></th>';
+  }
+
+  function countCell(n, code) {
+    var cls = ['n'];
+    if (!n) cls.push(code === 'A' ? 'warn' : 'z');
+    return '<td class="' + cls.join(' ') + '"' + (!n && code === 'A' ? ' title="Nobody on Cage A this day"' : '') + '>' + n + '</td>';
+  }
+
+  function renderGrid() {
+    var grid = $('grid');
+    var hadFocus = grid.contains(document.activeElement) && document.activeElement.tagName === 'TD';
+    var reg = isRegular();
+    var cols = reg ? [0, 1, 2, 3, 4, 5, 6].map(function (w) { return { weekday: w }; }) : dates();
+    var todayStr = today();
+    var sc = sortedCol(cols);
+    var order = currentOrder(cols);
+    var c = reg ? P.countsRegular(state) : P.counts(state, cols);
+
+    var keys = [];
+    order.forEach(function (id) { cols.forEach(function (col) { keys.push(id + '|' + (reg ? col.weekday : col.date)); }); });
+    var focusable = keys.indexOf(focusKey) !== -1 ? focusKey : (keys[0] || '');
+
+    var h = '<thead><tr><th class="name" scope="col">Admin</th>';
+    cols.forEach(function (col, ci) {
+      var cls = [];
+      if (!reg && ci > 0 && col.weekday === 0) cls.push('wkstart');
+      if (!reg && col.date === todayStr) cls.push('today');
+      if (ci === sc) cls.push('sorted');
+      h += '<th scope="col" data-col="' + ci + '"' + (reg ? ' data-weekday="' + col.weekday + '"' : ' data-date="' + col.date + '"') +
+        (cls.length ? ' class="' + cls.join(' ') + '"' : '') +
+        (state.settings.sort === 'area' ? ' title="Sort by who is where on this day"' : '') + '>' +
+        (reg ? '<b>' + DAYS[col.weekday] + '</b>' : DAYS[col.weekday] + '<b>' + md(col.date) + '</b>') + '</th>';
+    });
+    h += '<th class="days" scope="col" title="Days worked in the range shown">Days</th></tr></thead><tbody>';
+
+    if (!order.length) {
+      h += '<tr><td class="empty-row" colspan="' + (cols.length + 2) + '">No admins yet. Add the first one below.</td></tr>';
+    }
+    order.forEach(function (id) {
+      var p = personById(id);
+      if (!p) return;
+      h += '<tr data-person="' + esc(p.id) + '">' + nameCellHtml(p);
+      cols.forEach(function (col, ci) {
+        h += cellHtml(p, col, ci, !reg && col.date === todayStr, !reg && ci > 0 && col.weekday === 0, focusable);
+      });
+      h += '<td class="days">' + (c.daysWorked[p.id] || 0) + '</td></tr>';
+    });
+    h += '</tbody><tfoot>';
+    P.AREAS.forEach(function (a) {
+      h += '<tr data-count="' + a.code + '"><th class="name" scope="row"><span class="mini k-' + a.code + '">' + a.code + '</span>' + (a.name === a.code ? '' : esc(a.name)) + '</th>';
+      c.byArea[a.code].forEach(function (n, ci) { h += countCell(n, a.code).replace('<td class="', '<td class="' + (!reg && ci > 0 && cols[ci].weekday === 0 ? 'wkstart ' : '')); });
+      h += '<td class="days"></td></tr>';
+    });
+    h += '<tr class="total" data-count="scheduled"><th class="name" scope="row">Scheduled</th>' +
+      c.scheduled.map(function (n, ci) { return '<td class="n' + (n ? '' : ' z') + (!reg && ci > 0 && cols[ci].weekday === 0 ? ' wkstart' : '') + '">' + n + '</td>'; }).join('') + '<td class="days"></td></tr>';
+    h += '<tr class="open" data-count="open"><th class="name" scope="row">Not placed yet</th>' +
+      c.open.map(function (n, ci) { return '<td class="n' + (n ? '' : ' z') + (!reg && ci > 0 && cols[ci].weekday === 0 ? ' wkstart' : '') + '">' + n + '</td>'; }).join('') + '<td class="days"></td></tr>';
+    h += '</tfoot>';
+    grid.innerHTML = h;
+    grid.classList.toggle('by-area', state.settings.sort === 'area');
+
+    if (hadFocus && focusKey) {
+      var td = findCell(focusKey);
+      if (td) td.focus();
+    }
+    if (editing) {
+      var ed = grid.querySelector('input.ed-name');
+      if (ed && !grid.contains(document.activeElement)) ed.focus();
+    }
+  }
+
+  function findCell(key) {
+    var cut = key.lastIndexOf('|');
+    var person = key.slice(0, cut), at = key.slice(cut + 1);
+    var sel = /^\d$/.test(at) ? '[data-weekday="' + at + '"]' : '[data-date="' + at + '"]';
+    var cands = $('grid').querySelectorAll('td.cell' + sel);
+    for (var i = 0; i < cands.length; i++) if (cands[i].getAttribute('data-person') === person) return cands[i];
+    return null;
+  }
+
+  function renderSettings() {
+    var mid = $('manager-id');
+    if (document.activeElement !== mid) mid.value = state.settings.managerId;
+    var n = (state.leftOut || []).length;
+    $('left-out-text').textContent = n === 0
+      ? 'Nobody. Everyone in the file who reports to you and is not on the grid shows in a notice.'
+      : (n === 1 ? '1 person is' : n + ' people are') + ' left out, so the notice does not ask about them again.';
+    $('clear-left-out').disabled = n === 0;
+  }
+
+  function renderBackup() {
+    var info = store.exportInfo();
+    var at = info && info.lastExportedAt;
+    if (at) {
+      var d = new Date(at);
+      $('last-export').textContent = 'Last exported ' + (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear() + ' at ' + d.getHours() + ':' + pad(d.getMinutes()) + '.';
+    } else {
+      $('last-export').textContent = 'Never exported. A backup is the only way back if this browser is cleared.';
+    }
+    $('import-preview').hidden = !pendingImport;
+  }
+
+  // ---- focus and keys ---------------------------------------------------
+  function focusTd(td) {
+    if (!td) return;
+    focusKey = refKey(refOf(td));
+    Array.prototype.forEach.call($('grid').querySelectorAll('td.cell[tabindex="0"]'), function (x) { x.setAttribute('tabindex', '-1'); });
+    td.setAttribute('tabindex', '0');
+    td.focus();
+  }
+
+  function neighbour(td, dRow, dCol) {
+    var rows = Array.prototype.slice.call($('grid').querySelectorAll('tbody tr[data-person]'));
+    var r = rows.indexOf(td.parentNode) + dRow;
+    var ci = Number(td.getAttribute('data-col')) + dCol;
+    if (r < 0 || r >= rows.length) return null;
+    return rows[r].querySelector('td.cell[data-col="' + ci + '"]');
+  }
+
+  // Edit one cell from a key or a click, keep focus where it belongs.
+  function editCell(ref, op, code) {
+    var next = edited(state, ref, op, code);
+    if (next === state) return false;
+    return commit(next, { keepTyped: true });
+  }
+
+  function onGridKey(e) {
+    var td = e.target.closest ? e.target.closest('td.cell') : null;
+    if (!td || readOnly) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // The 9 key is read by position so Shift+9 (which types "(") still means 999,
+    // but only while the key really produced a 9 or that shifted "(". PageUp on
+    // the numpad (NumLock off) is code Numpad9 with key "PageUp" and paints nothing.
+    var nine = (e.code === 'Digit9' && (e.key === '9' || e.key === '(')) || (e.code === 'Numpad9' && e.key === '9');
+    var k = nine ? '9' : String(e.key || '').toLowerCase();
+    var ref = refOf(td);
+    if (Object.prototype.hasOwnProperty.call(KEYS, k)) {
+      e.preventDefault();
+      // Shift adds a second area to the cell just typed in, and only while that
+      // cell is on screen. Anything else that changed the view forgot it.
+      if (e.shiftKey && lastTyped && findCell(refKey(lastTyped))) {
+        focusKey = refKey(ref);
+        editCell(lastTyped, 'add', KEYS[k]);
+        return;
+      }
+      lastTyped = null;
+      if (e.shiftKey) { focusKey = refKey(ref); editCell(ref, 'add', KEYS[k]); return; }
+      var right = neighbour(td, 0, 1);
+      focusKey = right ? refKey(refOf(right)) : refKey(ref);
+      if (right) focusTd(right);
+      editCell(ref, 'set', KEYS[k]);
+      lastTyped = ref;
+      return;
+    }
+    if (k === '-' || k === '_' || e.code === 'NumpadSubtract') {
+      e.preventDefault();
+      var nx = neighbour(td, 0, 1);
+      focusKey = nx ? refKey(refOf(nx)) : refKey(ref);
+      if (nx) focusTd(nx);
+      editCell(ref, 'off');
+      lastTyped = null;
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      focusKey = refKey(ref);
+      editCell(ref, 'clear');
+      lastTyped = null;
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (brush) { focusKey = refKey(ref); applyBrushOnce(ref, e.shiftKey); }
+      return;
+    }
+    if (e.key === 'Escape') { brush = null; renderBrushes(); return; }
+    var moves = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    if (moves[e.key]) {
+      e.preventDefault();
+      lastTyped = null;
+      var to = neighbour(td, moves[e.key][0], moves[e.key][1]);
+      if (to) focusTd(to);
+    }
+  }
+
+  // ---- brush and drag ---------------------------------------------------
+  function dragMode(ref, shift) {
+    if (brush === 'clear') return 'clear';
+    if (brush === 'off') return isHandOff(ref) ? 'offUnset' : 'offSet';
+    if (shift) return 'add';
+    return holdsOnly(ref, brush) ? 'areaUnset' : 'areaSet';
+  }
+  function applyMode(s, ref, mode) {
+    if (mode === 'clear') return edited(s, ref, 'clear');
+    if (mode === 'offSet') return isOffHere(ref) ? s : edited(s, ref, 'offToggle');
+    if (mode === 'offUnset') return isHandOff(ref) ? edited(s, ref, 'offToggle') : s;
+    if (mode === 'add') return edited(s, ref, 'add', brush);
+    if (mode === 'areaUnset') return holdsOnly(ref, brush) ? edited(s, ref, 'toggle', brush) : s;
+    return edited(s, ref, 'set', brush);
+  }
+  function applyBrushOnce(ref, shift) {
+    var next = applyMode(state, ref, dragMode(ref, shift));
+    if (next !== state) commit(next);
+  }
+  function dragOver(ref) {
+    var k = refKey(ref);
+    if (drag.seen[k]) return;
+    drag.seen[k] = true;
+    var next = applyMode(state, ref, drag.mode);
+    if (next === state) return;
+    if (!drag.changed) { pushUndo(drag.before); drag.changed = true; }
+    state = next;
+    armedRemove = null;
+    persist();
+    render();
+  }
+
+  // ---- the time off file ------------------------------------------------
+  function readFileBytes(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(new Uint8Array(reader.result)); };
+      reader.onerror = function () { reject(new Error('The file could not be opened.')); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function handleTimeOffFile(file) {
+    if (!file || readOnly || stale) return;
+    var name = file.name || 'the file';
+    var managerId = state.settings.managerId;
+    readFileBytes(file).then(function (bytes) {
+      return window.SpreadsheetLib.readSpreadsheet(bytes);
+    }).then(function (rows) {
+      var parsed = TOR.parse(rows);
+      if (!parsed.ok) { dropMsg = { kind: 'err', text: name + ': ' + parsed.error + ' Nothing changed.' }; return; }
+      var mine = TOR.forManager(parsed.rows, managerId);
+      if (!mine.length) {
+        // Review Focus 1: a right report with nothing for this ID never replaces good rows with nothing.
+        dropMsg = { kind: 'err', text: '0 of ' + parsed.rows.length + ' rows in ' + name + ' report to ' + managerId + ', so nothing changed. Check the ID under Settings and backup.' };
+        return;
+      }
+      var next = P.applyReport(state, { fileName: name, runDate: parsed.runDate, total: parsed.rows.length, rows: mine }, Date.now());
+      dropMsg = null;
+      fileNotices = true;
+      dismissed = { collisions: {}, statuses: {} };
+      commit(next);
+    }).catch(function (err) {
+      dropMsg = { kind: 'err', text: name + ' could not be read. ' + String(err && err.message || err) };
+    }).then(function () {
+      dropCount += 1;
+      render();
+    });
+  }
+
+  // ---- backup -----------------------------------------------------------
+  function exportBackup() {
+    var data = store.exportAll(state);
+    var msg = $('backup-msg');
+    if (!data) { msg.className = 'msg err'; msg.textContent = 'The backup could not be made, because the schedule failed its own checks. Nothing was downloaded.'; return; }
+    var blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', 'schedule-planner-backup-' + today() + '.json');
+    document.body.appendChild(a);
+    a.click();
+    a.parentNode.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    store.markExported();
+    msg.className = 'msg';
+    msg.textContent = 'Backup downloaded. Keep it somewhere other than this browser.';
+    renderBackup();
+  }
+
+  function chooseImport(file) {
+    var msg = $('backup-msg');
+    var reader = new FileReader();
+    reader.onload = function () {
+      var textBody = String(reader.result || '');
+      var r = store.inspectImport(textBody);
+      if (!r.ok) {
+        pendingImport = null;
+        msg.className = 'msg err';
+        msg.textContent = 'That file is not a backup this page can restore: ' + r.error + ' Nothing changed.';
+        renderBackup();
+        return;
+      }
+      var s = r.summary;
+      pendingImport = textBody;
+      msg.textContent = '';
+      $('import-summary').textContent = 'This backup holds ' + s.people + (s.people === 1 ? ' admin, ' : ' admins, ') + s.datedDays + ' days set by hand, ' +
+        s.regularVersions + ' regular schedule ' + (s.regularVersions === 1 ? 'version' : 'versions') + ' and ' + s.timeOffRows + ' time off rows. ' +
+        (readOnly ? 'It replaces the schedule this computer cannot read.' : 'It replaces everything in the planner on this computer.');
+      renderBackup();
+    };
+    reader.onerror = function () { msg.className = 'msg err'; msg.textContent = 'The file could not be opened.'; };
+    reader.readAsText(file);
+  }
+
+  function confirmImport() {
+    var msg = $('backup-msg');
+    if (!pendingImport) return;
+    var ok = store.importAll(pendingImport, { overwriteUnreadable: readOnly });
+    pendingImport = null;
+    if (!ok) {
+      msg.className = 'msg err';
+      msg.textContent = 'The backup was not imported. The browser refused to store it, so nothing changed.';
+      render();
+      return;
+    }
+    var after = store.load();
+    if (after.status !== 'ok') { msg.className = 'msg err'; msg.textContent = 'The backup was stored but cannot be read back. Reload the page.'; render(); return; }
+    if (!readOnly) pushUndo(state);
+    readOnly = false;
+    state = after.state;
+    if (!state.settings.from) state = P.setSettings(state, { from: today() });
+    saveFailed = false;
+    rowOrder = null; editing = null; armedRemove = null; lastTyped = null;
+    fileNotices = false; dismissed = { collisions: {}, statuses: {} }; dropMsg = null;
+    msg.className = 'msg';
+    msg.textContent = 'Backup imported.';
+    render();
+  }
+
+  // ---- wiring -----------------------------------------------------------
+  var grid = $('grid');
+  grid.addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (t && t.classList && (t.classList.contains('ed-name') || t.classList.contains('ed-id'))) {
+      if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+      else if (e.key === 'Escape') { editing = null; render(); }
+      return;
+    }
+    onGridKey(e);
+  });
+  grid.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || readOnly || stale || screenshot) return;
+    var td = e.target.closest('td.cell');
+    if (!td) return;
+    e.preventDefault();
+    focusTd(td);
+    lastTyped = null;
+    if (!brush) return;
+    var ref = refOf(td);
+    drag = { before: state, mode: dragMode(ref, e.shiftKey), seen: {}, changed: false };
+    dragOver(ref);
+  });
+  grid.addEventListener('mouseover', function (e) {
+    if (!drag) return;
+    var td = e.target.closest('td.cell');
+    if (td) dragOver(refOf(td));
+  });
+  document.addEventListener('mouseup', function () { drag = null; });
+  grid.addEventListener('focusin', function (e) {
+    var td = e.target.closest && e.target.closest('td.cell');
+    if (td) focusKey = refKey(refOf(td));
+  });
+
+  function saveEdit() {
+    if (!editing) return;
+    var row = grid.querySelector('tr[data-person="' + editing.id + '"]');
+    if (!row) { editing = null; render(); return; }
+    var name = row.querySelector('input.ed-name').value.trim();
+    var eid = row.querySelector('input.ed-id').value.trim();
+    var p = personById(editing.id);
+    if (!p) { editing = null; render(); return; }
+    if (!name) { editing.error = 'Type a name.'; render(); return; }
+    if (eid && P.employeeIdTaken(state, eid, p.id)) { editing.error = 'Another admin already has employee ID ' + eid + '.'; render(); return; }
+    var next = P.renamePerson(state, p.id, name);
+    if (eid !== p.employeeId) next = P.linkPerson(next, p.id, eid);
+    editing = null;
+    if (!commit(next)) render();
+  }
+
+  grid.addEventListener('click', function (e) {
+    if (readOnly) return;
+    var t = e.target.closest('button');
+    var th = e.target.closest('thead th[data-col]');
+    if (!t && th && state.settings.sort === 'area') {
+      if (isRegular()) sortWeekday = Number(th.getAttribute('data-weekday'));
+      else sortDate = th.getAttribute('data-date');
+      rowOrder = null;
+      render();
+      return;
+    }
+    if (!t) { if (armedRemove) { armedRemove = null; render(); } return; }
+    if (t.hasAttribute('data-remove')) {
+      var id = t.getAttribute('data-remove');
+      if (armedRemove !== id) { armedRemove = id; render(); return; }
+      armedRemove = null;
+      commit(P.removePerson(state, id), { reorder: true });
+      return;
+    }
+    if (t.hasAttribute('data-edit')) { editing = { id: t.getAttribute('data-edit'), error: '' }; armedRemove = null; render(); return; }
+    if (t.getAttribute('data-act') === 'save-edit') { saveEdit(); return; }
+    if (t.getAttribute('data-act') === 'cancel-edit') { editing = null; render(); }
+  });
+
+  $('brushes').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-brush]');
+    if (!b) return;
+    var id = b.getAttribute('data-brush');
+    brush = brush === id ? null : id;
+    renderBrushes();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 'z' || e.shiftKey) return;
+    var tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    e.preventDefault();
+    undo();
+  });
+  document.addEventListener('click', function (e) {
+    if (armedClear && e.target.closest('button') !== $('clear-areas')) { armedClear = false; renderBars(); }
+  });
+
+  $('undo').addEventListener('click', undo);
+  $('clear-areas').addEventListener('click', function () {
+    if (readOnly) return;
+    if (!armedClear) { armedClear = true; renderBars(); return; }
+    armedClear = false;
+    var next = isRegular() ? P.clearAreasRegular(state, today()) : P.clearAreas(state, dates());
+    if (!commit(next)) renderBars();
+  });
+  $('reset-range').addEventListener('click', function () { commit(P.resetRange(state, dates())); });
+  $('screenshot').addEventListener('click', function () {
+    screenshot = !screenshot;
+    brush = screenshot ? null : brush;
+    armedRemove = null; armedClear = false; editing = null;
+    if (document.activeElement && document.activeElement.blur && screenshot) document.activeElement.blur();
+    render();
+  });
+  $('view-regular').addEventListener('click', function () { brush = brush === 'off' ? null : brush; lastTyped = null; setView({ view: 'regular' }); });
+  $('view-dates').addEventListener('click', function () { lastTyped = null; setView({ view: 'dates' }); });
+  $('sort').addEventListener('change', function () { setView({ sort: this.value }); });
+  $('show-asked').addEventListener('change', function () { setView({ showAskedOff: this.checked }); });
+
+  $('range-from').addEventListener('change', function () {
+    if (P.isIsoDate(this.value)) setView({ from: this.value }); else render();
+  });
+  $('range-to').addEventListener('change', function () {
+    var to = this.value, from = state.settings.from;
+    if (!P.isIsoDate(to)) { render(); return; }
+    var len = 1;
+    if (to > from) {
+      len = P.MAX_LEN;
+      for (var i = 1; i < P.MAX_LEN; i++) if (P.addDays(from, i) === to) { len = i + 1; break; }
+    }
+    setView({ len: len });
+  });
+  document.querySelector('.quick').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-len]');
+    if (b) setView({ len: Number(b.getAttribute('data-len')) });
+  });
+  $('range-prev').addEventListener('click', function () { setView({ from: P.addDays(state.settings.from, -state.settings.len) }); });
+  $('range-next').addEventListener('click', function () { setView({ from: P.addDays(state.settings.from, state.settings.len) }); });
+  $('range-today').addEventListener('click', function () { setView({ from: today() }); });
+
+  // Time off file: the input and a drop on the zone.
+  $('file-input').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (f) handleTimeOffFile(f);
+    try { this.value = ''; } catch (e) { /* some browsers refuse */ }
+  });
+  var zone = $('file-zone');
+  zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', function () { zone.classList.remove('over'); });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    zone.classList.remove('over');
+    if (!state.settings.managerId) return;
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleTimeOffFile(f);
+  });
+
+  function saveManagerId(value, msgEl) {
+    var v = String(value || '').trim();
+    if (!/^\d+$/.test(v)) { msgEl.className = 'msg err'; msgEl.textContent = 'Type the ID as digits only.'; return; }
+    var hadRows = !!state.timeOff && v !== state.settings.managerId;
+    var next = P.setSettings(state, { managerId: v });
+    msgEl.className = 'msg';
+    msgEl.textContent = next === state ? 'That is already the saved ID.' : (hadRows ? 'ID saved. The rows kept for the old ID are cleared, so drop the time off file again.' : 'ID saved.');
+    if (next !== state) { dropMsg = null; fileNotices = false; commit(next); }
+  }
+  $('manager-id-first-save').addEventListener('click', function () { saveManagerId($('manager-id-first').value, $('id-prompt-msg')); });
+  $('manager-id-first').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveManagerId(this.value, $('id-prompt-msg')); } });
+  $('manager-id-save').addEventListener('click', function () { saveManagerId($('manager-id').value, $('manager-id-msg')); });
+  $('manager-id').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveManagerId(this.value, $('manager-id-msg')); } });
+  $('clear-left-out').addEventListener('click', function () { commit(P.clearLeftOut(state)); });
+
+  $('notices').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b || readOnly) return;
+    var act = b.getAttribute('data-act');
+    var emp = b.getAttribute('data-emp');
+    if (act === 'dismiss-collisions') { P.collisions(state).forEach(function (c) { dismissed.collisions[collisionKey(c)] = true; }); renderNotices(); return; }
+    if (act === 'dismiss-statuses') { P.unknownStatuses(state).forEach(function (s) { dismissed.statuses[s] = true; }); renderNotices(); return; }
+    if (act === 'add-unknown') { commit(P.addPerson(state, { name: b.getAttribute('data-name'), employeeId: emp }, newPersonId()), { reorder: true }); return; }
+    if (act === 'leave-out') { commit(P.leaveOut(state, emp)); return; }
+    if (act === 'link-unknown') {
+      var sel = b.parentNode.querySelector('select');
+      var id = sel && sel.value;
+      if (!id) { if (sel) sel.focus(); return; }
+      if (P.employeeIdTaken(state, emp, id)) return;
+      commit(P.linkPerson(state, id, emp));
+    }
+  });
+
+  function addPersonFromRow() {
+    if (readOnly) return;
+    var name = $('add-name').value.trim();
+    var eid = $('add-id').value.trim();
+    var msg = $('add-msg');
+    if (!name) { msg.textContent = 'Type a name first.'; $('add-name').focus(); return; }
+    if (eid && P.employeeIdTaken(state, eid, null)) { msg.textContent = 'Another admin already has employee ID ' + eid + '.'; return; }
+    var next = P.addPerson(state, { name: name, employeeId: eid }, newPersonId());
+    if (next === state) { msg.className = 'msg'; msg.textContent = 'That admin could not be added.'; return; }
+    var restored = next.removed.length < state.removed.length;
+    msg.className = restored ? 'msg ok' : 'msg';
+    msg.textContent = restored ? name + ' was removed before, so their saved days are back.' : '';
+    $('add-name').value = '';
+    $('add-id').value = '';
+    commit(next, { reorder: true });
+    $('add-name').focus();
+  }
+  $('add-person').addEventListener('click', addPersonFromRow);
+  ['add-name', 'add-id'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addPersonFromRow(); } });
+  });
+
+  $('reload-latest').addEventListener('click', loadLatest);
+
+  // Another tab or window saved the planner: say so at once, without waiting
+  // for this tab to try a save. The store compares the stored value with what
+  // this page last loaded or wrote, so an event for some other key, or one
+  // that changed nothing, shows nothing.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== null && e.key !== Store.STATE_KEY) return;
+    if (store.changedElsewhere()) markStale();
+  });
+
+  // A file let go anywhere but the drop zone must not make the browser open it
+  // and leave the planner (the undo history would go with it).
+  function carriesFiles(e) {
+    var dt = e.dataTransfer;
+    if (!dt) return false;
+    if (dt.files && dt.files.length) return true;
+    var types = dt.types;
+    return !!types && Array.prototype.indexOf.call(types, 'Files') !== -1;
+  }
+  window.addEventListener('dragover', function (e) { if (carriesFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', function (e) { if (carriesFiles(e)) e.preventDefault(); });
+
+  $('export').addEventListener('click', exportBackup);
+  $('import-input').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (f) chooseImport(f);
+    try { this.value = ''; } catch (e) { /* some browsers refuse */ }
+  });
+  $('import-confirm').addEventListener('click', confirmImport);
+  $('import-cancel').addEventListener('click', function () { pendingImport = null; $('backup-msg').textContent = ''; renderBackup(); });
+
+  render();
 })();
 </script>
-<script>ToolHelpers.pinHeader();</script>
 </body>
 </html>

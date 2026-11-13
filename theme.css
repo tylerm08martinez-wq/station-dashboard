@@ -401,6 +401,24 @@ html[data-theme="dark"] .watch-row.flagged {
 }
 html[data-theme="dark"] .watch-flag { color: #fca5a5; }
 
+/* Schedule Planner (#1129): the dark half of the page's tokens. The light
+   values sit in schedule.html's inline :root; these live here because this
+   file loads last and wins (the PR #504 trap). The nine area fills are the
+   same on both surfaces on purpose, so a chip never changes meaning with the
+   theme; they are declared here so a dark retune has one home. */
+html[data-theme="dark"] {
+  --sp-a: #d92d20; --sp-b: #f08c00; --sp-c: #f2c94c; --sp-me: #2563eb; --sp-dmg: #23873f;
+  --sp-xp: #7c3aed; --sp-999: #6b7280; --sp-lc: #0b7c87; --sp-og: #8d5a3b;
+  --sp-chip-ink: #ffffff; --sp-chip-ink-warm: #2b1a00;
+  --sp-off-bg: #262733;
+  --sp-vac-a: #2c2740; --sp-vac-b: #3a3157; --sp-vac-ink: #d8c8fa;
+  --sp-asked: #c4a8ff;
+  --sp-zero: #55576a;
+  --sp-today: #2e2a1a;
+  --sp-focus: #6cb0ff;
+  --sp-accent: #b79cf0; --sp-accent-ink: #14151b;
+}
+
 /* Screen-only chrome: the fixed toggle otherwise prints as a gray box in the
    corner of every tool's printout. */
 @media print {

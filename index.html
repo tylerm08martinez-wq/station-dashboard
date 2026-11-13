@@ -47,24 +47,6 @@
     }
     a { color: inherit; }
 
-    .area-tag {
-      display:inline-block; background: var(--crit-bg); color: var(--crit);
-      border:1px solid #f3b4b0; border-radius:4px; padding:1px 8px;
-      margin:0 3px 3px 0; font-weight:700; font-size:12px;
-    }
-    .area-tag.soft { background:#fff4e5; color:var(--warn); border-color:#f0d9b0; }
-    .fallback { color:var(--text-muted); font-size:12px; }
-    .fallback b { color:var(--text); }
-    .bf-chip { display:inline-flex; align-items:baseline; gap:4px; padding:2px 8px; border-radius:999px; margin:2px 3px 2px 0; border:1px solid var(--border); }
-    .bf-chip b { color:var(--text); }
-    .bf-cost { font-size:11px; color:var(--text-faint); }
-    .bf-free   { background:#eafaf0; border-color:#bfe9cf; }
-    .bf-reassign { background:#fff7e8; border-color:#f0dcb0; }
-    .bf-reopens-cannot-skip { background:#fdecec; border-color:#f3c0c0; opacity:0.7; }
-    .bf-reopens-cannot-skip b { color:#b91c1c; }
-    .bf-note { color:var(--text-faint); }
-    .bf-partner { font-size:10px; font-weight:700; color:#b45309; background:#fff3e0; border-radius:4px; padding:1px 5px; margin-left:5px; }
-    .crit-note { color: var(--crit); font-weight: 700; font-size: 12px; margin-top: 6px; }
     .freshness { color:var(--text-fainter); font-size:11px; }
 
     /* ── Glance Wall (design rationale in ADR-0006) ──────────────────────── */
@@ -172,28 +154,22 @@
 <footer>Station 849 / NPHO — Internal Use Only · read-only mirror, not the record</footer>
 
 <script src="lib/tool-helpers.js"></script>
-<script src="lib/schedule-coverage.js"></script>
 <script src="lib/qa-checklist.js"></script>
 <script src="lib/time-off.js"></script>
 <script src="lib/attendance-rules.js"></script>
-<script src="lib/coverage-reconcile.js"></script>
-<script src="lib/schedule-analysis.js"></script>
-<script src="lib/backfill-bench.js"></script>
-<script src="lib/backfill.js"></script>
 <script src="lib/command-center.js"></script>
-<script src="lib/schedule-data.js"></script>
 <script>
   // ── Command Center hub (issue #142, ADR-0006) ────────────────────────────
-  // A strictly read-only mirror: it reads the other tools' localStorage, runs
-  // the schedule through the shared ToolHelpers path, and renders the Glance
-  // Wall view model from lib/command-center.js. It never writes, never syncs.
-  // Attendance signals (Attendance Today tile, out-today context, the Needs
-  // Attention panel) arrive in #143/#144.
+  // A strictly read-only mirror: it reads the other tools' localStorage and
+  // renders the Glance Wall view model from lib/command-center.js. It never
+  // writes, never syncs. It reads no schedule: the Schedule tile is a plain link
+  // to the planner (#1130, ADR-0026). Attendance signals (Attendance Today tile
+  // with its out-today line, the Needs Attention panel) arrive in #143/#144.
 
   // ── Hard-required-script preflight ────────────────────────────────────────
   // A stale/incomplete clone (or a bad merge deleting lib/ files) has twice
   // left dashboard.html loading with 404'd <script src> tags: every soft-
-  // guarded lib (CoverageReconcile, ScheduleData, QaChecklist, Backfill*) is
+  // guarded lib (QaChecklist) is
   // consumed via `root && root.X` so it degrades safely, but ToolHelpers,
   // CommandCenter, and AttendanceRules are hard-required — render()/
   // renderAttention() call them unguarded, and AttendanceRules is called
@@ -226,40 +202,10 @@
   })();
 
   const esc = ToolHelpers.escapeHtml;
-  const sched = ToolHelpers.createScheduleStore();
   const store = ToolHelpers.createStorage(); // default namespace: shared keys
 
   // Date badge (display only — never feeds a classification).
   document.getElementById('date-badge').textContent = ToolHelpers.formatDateBadge();
-
-  // Resolve the schedule day-view + coverage from stored raw text. A malformed
-  // or empty store must never blank or break the hub — on any failure we return
-  // nulls and the deriver renders the empty coverage state.
-  function readScheduleInputs() {
-    // A manually loaded week wins only while its version stamp matches the live
-    // schedule; otherwise the repo-embedded schedule supersedes it, so the hub
-    // auto-syncs to current-schedule.md with no manual Clear. (schedule auto-sync)
-    const embedded = (window.ScheduleData && ScheduleData.RAW) || '';
-    const embeddedVer = (window.ScheduleData && ScheduleData.VERSION) || '';
-    const raw = ToolHelpers.resolveScheduleRaw({
-      saved: sched.get(), savedVer: sched.getVersion(),
-      embedded: embedded, embeddedVer: embeddedVer,
-    });
-    if (!raw || !String(raw).trim()) return { scheduleView: null, coverage: null };
-    try {
-      const parsed = ScheduleCoverage.parseScheduleInput(raw);
-      const hasData = parsed && (parsed.areas.length || parsed.counts.length || parsed.shifts.length);
-      if (!hasData) return { scheduleView: null, coverage: null };
-      const idx = ToolHelpers.todayIndex();
-      const view = ScheduleCoverage.selectDay(parsed, idx);
-      const coverage = ScheduleCoverage.deriveCoverage(view.assignedAreas, ScheduleCoverage.SORT_AREAS);
-      // Per-area roster feeds Floor-Absence coverage reconciliation (ADR-0008).
-      const assigneesByArea = ScheduleCoverage.assigneesByArea(parsed, idx);
-      return { scheduleView: view, coverage: coverage, assigneesByArea: assigneesByArea };
-    } catch (e) {
-      return { scheduleView: null, coverage: null, assigneesByArea: null };
-    }
-  }
 
   function readChecklistState() {
     try { return store.get(QaChecklist.todayKey(), {}); }
@@ -285,78 +231,24 @@
     catch (e) { return null; }
   }
 
-  // Live backfill recommendation (#250): present Bench candidates, cost-tiered
-  // (cheap first; the "would re-open Cage A" tier demoted/greyed), each tagged
-  // with the cost of moving them. Falls back to the static Bench note when no
-  // recommendation is available, and reads "escalate" when no one's present.
-  // Names are trusted constants; only the free-text note is escaped.
-  // The backfill detail HTML (shared by the Coverage tile and the Needs
-  // Attention row so they never diverge): cost-tiered chips, or the static Bench
-  // note when no recommendation is available, or "escalate" when no one's present.
-  function backfillInner(u) {
-    const bf = u.backfill;
-    if (!bf || !bf.candidates) {
-      return u.first && u.first.length ? 'try <b>' + u.first.map(esc).join(' · ') + '</b> — ' + esc(u.note) : esc(u.note);
-    }
-    if (bf.escalate) {
-      return '<b>no one present</b> — escalate · ' + esc(u.note);
-    }
-    const chips = bf.candidates.map(function (c) {
-      const cost = c.tier === 'free' ? c.currentArea + ', free'
-        : c.tier === 'reassign' ? c.currentArea + ' → opens ' + c.opens.join('/')
-        : c.currentArea + ' — re-opens ' + c.opens.join('/');
-      const partner = c.needsPartner ? '<span class="bf-partner">needs a partner</span>' : '';
-      return '<span class="bf-chip bf-' + c.tier + '"><b>' + esc(c.name) + '</b> <span class="bf-cost">' + esc(cost) + '</span>' + partner + '</span>';
-    }).join(' ');
-    return chips + ' <span class="bf-note">— ' + esc(u.note) + '</span>';
-  }
-
-  function fallbackLine(u) { return '<span class="fallback">' + backfillInner(u) + '</span>'; }
-
-  // Neutral "out today" coverage context — protected-sick / scheduled absences.
-  // Never a discipline event; explains why an area is short.
-  function outTodayLine(cov) {
-    if (!cov.outToday || !cov.outToday.length) return '';
-    const list = cov.outToday.map(function (o) {
+  // Neutral "out today" context: protected-sick / scheduled absences. Never a
+  // discipline event, never counted, and never tied to a schedule area.
+  function outTodayLine(att) {
+    if (!att.outToday || !att.outToday.length) return '';
+    const list = att.outToday.map(function (o) {
       return esc(o.name) + ' (' + esc(o.reason) + ')';
     }).join(' · ');
     return '<div class="out-today">Out today: ' + list + '</div>';
   }
 
-  function coverageTile(cov) {
-    if (!cov.loaded) {
-      return '<a class="tile" href="schedule.html" style="border-top-color:var(--border)">' +
-        '<div class="tile-ico">📅</div>' +
-        '<div class="tile-label">Coverage</div>' +
-        '<div class="tile-mid">No schedule loaded</div>' +
-        '<div class="tile-sub">load this week’s schedule to see coverage</div>' +
-        outTodayLine(cov) +
-        '<div class="tile-link">Load a schedule →</div></a>';
-    }
-    let inner, cls;
-    if (cov.allCovered) {
-      cls = 'ok';
-      inner = '<div class="tile-big" style="font-size:24px;color:var(--ok)">All covered</div>' +
-        '<div class="tile-sub">' + ScheduleCoverage.SORT_AREAS.map(esc).join(' · ') + '</div>';
-    } else {
-      cls = cov.cannotSkip.length ? 'crit' : 'warn';
-      const tags = cov.uncovered.map(function (u) {
-        return '<span class="area-tag' + (u.cannotSkip ? '' : ' soft') + '">' + esc(u.area) + '</span>';
-      }).join('');
-      const lines = cov.uncovered.map(fallbackLine).join('<br>');
-      const critNote = cov.cannotSkip.length
-        ? '<div class="crit-note">⚠ High VAL cage (A) uncovered — cannot skip.</div>'
-        : '';
-      inner = '<div class="tile-mid">' + tags + '</div>' +
-        '<div class="tile-sub">' + lines + critNote + '</div>';
-    }
-    return '<a class="tile ' + cls + '" href="schedule.html">' +
+  // The schedule lives in the Schedule Planner (schedule.html). The front page
+  // only links to it: no coverage logic, nothing read from the planner's data.
+  function scheduleTile() {
+    return '<a class="tile" href="schedule.html" style="border-top-color:var(--border)">' +
       '<div class="tile-ico">📅</div>' +
-      '<div class="tile-label">Coverage · ' + esc(cov.weekday || '') + '</div>' +
-      inner +
-      outTodayLine(cov) +
-      '<div class="freshness">schedule as last loaded</div>' +
-      '<div class="tile-link">Schedule →</div></a>';
+      '<div class="tile-label">Schedule</div>' +
+      '<div class="tile-sub">Plan areas and days off</div>' +
+      '<div class="tile-link">Open →</div></a>';
   }
 
   function attendanceTile(att) {
@@ -372,6 +264,7 @@
       '<div class="tile-big">' + att.todayCount + '</div>' +
       '<div class="tile-sub">' + body +
       '<br><span class="freshness">as of last sync · open Time-Off for the record</span></div>' +
+      outTodayLine(att) +
       '<div class="tile-link">Log →</div></a>';
   }
 
@@ -450,18 +343,12 @@
       '<div class="tile-link">Open →</div></a>';
   }
 
-  // Needs Attention panel: priority-ordered rows from the deriver. Render-only
-  // for #143 — dismiss / Handled / collapse arrive in #145, Heads-ups in #144.
+  // Needs Attention panel: priority-ordered rows from the deriver (Flags,
+  // Heads-ups, today's counted events). Dismiss / Handled / collapse are #145.
   // Every row points back to the tool of record; the hub never finalizes.
   function attentionRow(item, handled) {
     let ico, title, detail, trail;
-    if (item.tier === 'critical-area' || item.tier === 'area') {
-      const crit = item.tier === 'critical-area';
-      ico = crit ? '⛔' : '⚠️';
-      title = esc(item.title);
-      detail = backfillInner(item); // same cost-tiered bench as the Coverage tile
-      trail = '<a class="pill warn" href="schedule.html">Schedule →</a>';
-    } else if (item.tier === 'flag') {
+    if (item.tier === 'flag') {
       ico = '🚩';
       title = esc(item.admin) + ' — Flag: house standard met';
       detail = esc(item.message); // carries "consider a documented conversation"
@@ -471,11 +358,6 @@
       title = esc(item.admin) + ' — heads-up';
       detail = esc(item.message); // facts-only: "N Xs in 30 days — 1 away from the limit of M"
       trail = '<a class="pill muted" href="https://tylerm08martinez-wq.github.io/timeoff-tool/">View →</a>';
-    } else if (item.tier === 'nomap') { // fail-loud: a Floor Absence that matched no scheduled area
-      ico = '❓';
-      title = esc(item.title);
-      detail = 'Out today but not on the loaded schedule — check the spelling, or whether they were scheduled.';
-      trail = '<a class="pill warn" href="schedule.html">Schedule →</a>';
     } else { // event
       ico = '📝';
       title = esc(item.name) + ' — ' + esc(item.type);
@@ -503,7 +385,7 @@
     return Array.isArray(arr) ? arr : [];
   }
   // Apply dismissal scoping (#146): drop stale day-scoped keys and persist the
-  // pruned set, so coverage/event dismissals auto-clear at the next sort while
+  // pruned set, so event dismissals auto-clear at the next sort while
   // a worsened Flag (new count → new key) re-surfaces on its own.
   function pruneDismissedNow() {
     const raw = dismissedSet();
@@ -527,7 +409,7 @@
       host.innerHTML = '<div class="attn"><div class="attn-header">Needs Attention ' +
         '<span class="attn-count allclear">all clear</span></div>' +
         '<div class="attn-rows"><div class="attn-empty">✓ Nothing needs attention — ' +
-        'coverage full, no attendance events.</div></div></div>';
+        'no attendance events.</div></div></div>';
       return;
     }
 
@@ -589,11 +471,7 @@
   function render() {
     const host = document.getElementById('glance-wall');
     if (!host) return;
-    const inputs = readScheduleInputs();
     const model = CommandCenter.derive({
-      scheduleView: inputs.scheduleView,
-      coverage: inputs.coverage,
-      assigneesByArea: inputs.assigneesByArea,
       checklistState: readChecklistState(),
       masterlistRows: readMasterlistRows(),
       entries: readEntries(),
@@ -602,7 +480,7 @@
     });
     renderAttention(model);
     host.innerHTML =
-      coverageTile(model.coverage) +
+      scheduleTile() +
       checklistTile(model.checklist) +
       attendanceTile(model.attendance) +
       masterlistTile(model.masterlist) +
