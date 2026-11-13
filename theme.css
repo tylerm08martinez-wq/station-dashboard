@@ -417,6 +417,25 @@ html[data-theme="dark"] {
   --sp-today: #2e2a1a;
   --sp-focus: #6cb0ff;
   --sp-accent: #b79cf0; --sp-accent-ink: #14151b;
+  --sp-sel-bg: rgba(108, 176, 255, 0.18); --sp-sel-ring: #4f86c9;
+  --sp-toast-bg: #e7e7ec; --sp-toast-ink: #14151b;
+}
+/* The Schedule Planner prints in light colors whatever the theme (round 2,
+   #1134): the light values again, on body so they win over the dark ones on
+   html for everything printed. */
+@media print {
+  html[data-theme="dark"] body.sp-page {
+    --surface: #ffffff; --app-bg: #ffffff; --text: #1a1a2e; --text-muted: #666666; --text-faint: #999999;
+    --border: #e0e0e0; --border-strong: #d1d5db; --field-bg: #ffffff; --hover-soft: #f3eeff; --brand-ink: #4D148C;
+    --sp-off-bg: #eceef3; --sp-vac-a: #ece7f6; --sp-vac-b: #ddd4ee; --sp-vac-ink: #4D148C; --sp-asked: #7c3aed;
+    --sp-zero: #b4b7c5; --sp-today: #fff4d6; --sp-accent: #4D148C; --sp-accent-ink: #ffffff;
+  }
+  /* The generic dark `th` rule above sets a literal pale grey on every th, and
+     the tokens cannot reach a literal. Admin names and count labels are th
+     cells in the grid body and footer (and the day headings), so every th in the
+     grid prints dark here. More specific than that
+     rule (an id and a class more), so no !important is needed. */
+  html[data-theme="dark"] body.sp-page #grid th { color: var(--text); }
 }
 
 /* Screen-only chrome: the fixed toggle otherwise prints as a gray box in the

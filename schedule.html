@@ -32,6 +32,10 @@
       --sp-today: #fff4d6;
       --sp-focus: #0b63ce;
       --sp-accent: #4D148C; --sp-accent-ink: #ffffff;
+      /* Round 2: selected days (a wash laid over the cell, so stripes and
+         chips still read through) and the Copied / Pasted confirmation. */
+      --sp-sel-bg: rgba(11, 99, 206, 0.13); --sp-sel-ring: rgba(11, 99, 206, 0.55);
+      --sp-toast-bg: var(--text); --sp-toast-ink: var(--surface);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     [hidden] { display: none !important; }
@@ -144,10 +148,30 @@
     .brush.plain { background: var(--sp-off-bg); color: var(--text); font-weight: 600; }
     .brush[aria-pressed="true"] { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--surface); }
     .brushes .sep { width: 1px; height: 24px; background: var(--border-strong); margin: 0 4px; }
-    .hint { font-size: 12.5px; color: var(--text-muted); }
-    .hint kbd { font: inherit; font-weight: 700; color: var(--text); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; background: var(--surface); }
+    .hint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 28px; }
+    .hint { font-size: 12.5px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    kbd { font: inherit; font-size: 12px; font-weight: 700; color: var(--text); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); }
+    .keys-btn { font: inherit; font-size: 12px; font-weight: 700; color: var(--brand-ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 10px; cursor: pointer; }
+    .keys-btn[aria-expanded="true"] { background: var(--sp-accent); color: var(--sp-accent-ink); border-color: var(--sp-accent); }
+    .keys-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 28px; font-size: 13px; }
+    .keys-panel h3 { grid-column: 1 / -1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+    .keys-panel .k { display: flex; gap: 10px; align-items: baseline; }
+    .keys-panel .kk { flex: 0 0 150px; white-space: nowrap; }
+    /* The Copied / Pasted confirmation: made when a copy or paste happens and
+       taken away by a one-off timer; nothing ticks at load. */
+    .clip-msg { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px; background: var(--sp-toast-bg); color: var(--sp-toast-ink); font-size: 12.5px; font-weight: 600; animation: sp-pop 0.16s ease-out; }
+    .clip-msg::before { content: "\2713"; font-weight: 800; }
+    @keyframes sp-pop { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .range-msg { flex-basis: 100%; text-align: right; color: var(--sp-a); font-size: 12.5px; font-weight: 600; }
+    .range-msg:empty { display: none; }
+    .nudge { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; color: var(--text-muted); border-left: 3px solid var(--sp-b); padding: 2px 0 2px 10px; }
+    .nudge .btn { padding: 4px 12px; }
+    .nudge .msg.err, .dup-warning { color: var(--sp-a); font-weight: 600; font-size: 13px; }
+    .dup-warning { margin: 0 0 8px; border-left: 3px solid var(--sp-a); padding: 2px 0 2px 10px; }
 
-    /* The grid */
+    /* The grid. Only sideways scrolling lives in its own box (the names column
+       stays pinned there); the page scrolls up and down, so the count rows
+       under the admins are never hidden inside a second scroll area. */
     .grid-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-width: 0; }
     .scroll { overflow-x: auto; min-width: 0; }
     #grid { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
@@ -156,6 +180,13 @@
     #grid th, #grid td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; padding: 0; height: 56px; }
     #grid tr > :last-child { border-right: 0; }
     #grid thead th { background: var(--surface); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; height: 50px; min-width: 66px; }
+    /* Every heading is a real button: Tab reaches it, Enter or Space sorts. */
+    #grid .hd { font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; background: none; border: 0; width: 100%; height: 100%; min-height: 50px; padding: 4px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    #grid th.name .hd { align-items: flex-start; padding-left: 0; }
+    #grid .hd:hover { color: var(--text); background: var(--hover-soft); }
+    #grid .hd:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -3px; }
+    #grid thead th.name.sorted .hd::after { content: "A to Z \25BE"; font-size: 9.5px; color: var(--sp-accent); letter-spacing: 0.06em; }
+    #grid thead .pf { display: block; font-size: 9.5px; letter-spacing: 0.06em; color: var(--text-faint); font-style: italic; text-transform: none; }
     #grid thead th b { display: block; font-size: 15px; color: var(--text); letter-spacing: 0; text-transform: none; }
     #grid thead th.today { background: var(--sp-today); }
     #grid thead th.today::after { content: "today"; display: block; font-size: 9.5px; letter-spacing: 0.08em; color: var(--text-muted); }
@@ -180,6 +211,11 @@
     #grid td.cell { position: relative; cursor: pointer; user-select: none; -webkit-user-select: none; min-width: 66px; }
     #grid td.cell:hover { background: var(--hover-soft); }
     #grid td.cell:focus { outline: none; box-shadow: inset 0 0 0 3px var(--sp-focus); }
+    /* Selected days: a thin ring and a wash painted over the cell's own fill
+       (an inset shadow sits above the background and below the chip), so a
+       selected vacation day keeps its stripes. Focus stays the thick ring. */
+    #grid td.cell.sel { box-shadow: inset 0 0 0 1px var(--sp-sel-ring), inset 0 0 0 999px var(--sp-sel-bg); }
+    #grid td.cell.sel:focus { box-shadow: inset 0 0 0 3px var(--sp-focus), inset 0 0 0 999px var(--sp-sel-bg); }
     .chip { display: inline-block; min-width: 50px; padding: 5px 9px; border-radius: 6px; font-weight: 800; font-size: 14px; letter-spacing: 0.02em; color: var(--sp-chip-ink); line-height: 1.2; }
     .k-A { background: var(--sp-a); }
     .k-B { background: var(--sp-b); color: var(--sp-chip-ink-warm); }
@@ -199,8 +235,7 @@
     body.show-asked #grid td.asked { outline: 2px dashed var(--sp-asked); outline-offset: -5px; }
     body.show-asked #grid td.asked::after { content: "asked off"; display: block; font-size: 10px; font-weight: 700; color: var(--sp-asked); letter-spacing: 0.04em; line-height: 1; margin-top: 3px; }
     #grid td.chg::before { content: ""; position: absolute; top: 0; right: 0; border: 5px solid transparent; border-top-color: var(--text); border-right-color: var(--text); }
-    #grid.by-area thead th[data-col] { cursor: pointer; }
-    #grid thead th.sorted { box-shadow: inset 0 -3px 0 var(--sp-accent); }
+    #grid thead th.sorted { box-shadow: inset 0 -3px 0 var(--sp-accent), 0 1px 0 var(--border); }
     #grid thead th.sorted b::after { content: " \25BE"; color: var(--sp-accent); }
 
     #grid tfoot td, #grid tfoot th { height: 32px; font-weight: 700; font-size: 14px; }
@@ -224,6 +259,7 @@
     .legend .lg-asked { background: var(--surface); border: 2px dashed var(--sp-asked); }
     .legend .lg-chg { background: linear-gradient(225deg, var(--text) 0 32%, var(--surface) 32%); }
     .legend .lg-focus { background: var(--surface); box-shadow: inset 0 0 0 2px var(--sp-focus); border: 0; }
+    .legend .lg-sel { background: var(--surface); box-shadow: inset 0 0 0 1px var(--sp-sel-ring), inset 0 0 0 99px var(--sp-sel-bg); border: 0; }
     body:not(.show-asked) .lg-asked-item { display: none; }
     #save-ok { font-size: 12px; color: var(--text-faint); }
 
@@ -238,6 +274,22 @@
     .settings .msg.err { color: var(--sp-a); }
     #import-preview { border: 1px solid var(--border-strong); border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
     #import-preview .row { margin-top: 8px; }
+    /* Regular days off: one row per admin, seven boxes, and Up / Down for My order. */
+    .settings .wide { grid-column: 1 / -1; }
+    .dayoff-wrap { overflow-x: auto; margin-top: 4px; }
+    #dayoff-table { border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 520px; }
+    #dayoff-table th, #dayoff-table td { padding: 5px 8px; text-align: center; border-bottom: 1px solid var(--border); }
+    #dayoff-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 700; }
+    #dayoff-table tbody th { text-align: left; font-weight: 600; white-space: nowrap; padding-right: 18px; }
+    #dayoff-table tbody tr:hover > * { background: var(--hover-soft); }
+    #dayoff-table td.wkend, #dayoff-table th.wkend { background: var(--sp-off-bg); }
+    #dayoff-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--sp-accent); cursor: pointer; vertical-align: middle; }
+    #dayoff-table .mv { white-space: nowrap; }
+    #dayoff-table .mv .btn { padding: 2px 9px; margin-left: 2px; }
+    #grid .ed-days { display: inline-flex; gap: 2px; flex-basis: 100%; align-items: center; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    #grid .ed-days label { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 0 2px; cursor: pointer; }
+    #grid .ed-days input { accent-color: var(--sp-accent); }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
     /* Screenshot view: title, date range, grid and counts only. */
     body.screenshot .back-link,
@@ -249,6 +301,12 @@
     body.screenshot #notices,
     body.screenshot .brushes,
     body.screenshot .hint,
+    body.screenshot .hint-row,
+    body.screenshot #keys-panel,
+    body.screenshot #backup-nudge,
+    body.screenshot #dup-warning,
+    body.screenshot .banner .acts,
+    body.screenshot #grid .pf,
     body.screenshot .addrow,
     body.screenshot .legend,
     body.screenshot #save-ok,
@@ -261,6 +319,29 @@
     body.screenshot #grid td.asked { outline: none; }
     body.screenshot #grid td.asked::after { display: none; }
     body.screenshot #grid .nm { cursor: default; }
+    body.screenshot #grid td.cell.sel { box-shadow: none; }
+    body.screenshot #grid .hd { cursor: default; }
+
+    /* Printing (Ctrl+P) gives the Screenshot view layout, landscape, in light
+       colors whatever the theme. The light token values for a dark-theme
+       printout live in theme.css (@media print, body.sp-page), set on body so
+       they override the dark values theme.css puts on html. */
+    @page { size: landscape; margin: 10mm; }
+    @media print {
+      body {
+        background: var(--surface) !important; color: var(--text) !important; padding: 0;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .back-link, .bar-1, .bar-2, .view-note, .file-zone, #notices, .brushes, .hint-row, #keys-panel,
+      .addrow, .legend, #save-ok, #backup-nudge, #dup-warning, .settings, .banner .acts, #grid .rm, #grid .noid, #grid .pf,
+      .theme-toggle { display: none !important; }
+      .scroll { overflow: visible; }
+      .grid-card { border-color: var(--border-strong); }
+      #grid .name { position: static; }
+      #grid td.chg::before, body.show-asked #grid td.asked::after { display: none; }
+      body.show-asked #grid td.asked { outline: none; }
+      #grid td.cell.sel, #grid td.cell:focus { box-shadow: none; }
+    }
 
     /* Below about 900px the range controls may take a row of their own. */
     @media (max-width: 900px) {
@@ -276,7 +357,7 @@
   <script>(function(){try{if(localStorage.getItem('dashboard_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
   <script src="lib/theme.js"></script>
 </head>
-<body class="show-asked">
+<body class="show-asked sp-page">
 <div class="wrap">
   <header class="sp-head">
     <div class="sp-title">
@@ -321,7 +402,12 @@
           <button type="button" class="btn btn-gray" data-len="14" title="14 days">14</button>
         </span>
         <button type="button" class="btn btn-gray" id="range-today" title="Start the range today">Today</button>
+        <span class="quick">
+          <button type="button" class="btn btn-gray" id="range-this-week" title="Sunday through Saturday of this week">This week</button>
+          <button type="button" class="btn btn-gray" id="range-next-week" title="Sunday through Saturday of next week">Next week</button>
+        </span>
         <span class="muted" id="range-count"></span>
+        <span class="range-msg" id="range-msg" role="status" aria-live="polite"></span>
       </div>
     </div>
 
@@ -358,10 +444,35 @@
       <p id="file-status" data-read="0"></p>
     </div>
 
+    <p class="msg err dup-warning" id="dup-warning" role="status" hidden></p>
     <div id="notices" aria-live="polite"></div>
 
     <div class="brushes" id="brushes"></div>
-    <p class="hint">Click a day and type: <kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>M</kbd>E <kbd>D</kbd>MG <kbd>X</kbd>press <kbd>9</kbd>99 <kbd>L</kbd>earning Center <kbd>O</kbd>vergoods, <kbd>-</kbd> for a day off, <kbd>Backspace</kbd> to clear. Typing moves to the next day and the arrow keys move anywhere. For 999/B type <kbd>9</kbd> then <kbd>Shift</kbd>+<kbd>B</kbd>. Or pick a color above and click or drag across days. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</p>
+    <div class="hint-row">
+      <p class="hint">Click a day and type its area letter, or pick a color and click days. <button type="button" class="keys-btn" id="keys-btn" aria-expanded="false" aria-controls="keys-panel">Keys</button></p>
+      <p class="clip-msg" id="clip-msg" role="status" aria-live="polite" hidden></p>
+    </div>
+    <div class="keys-panel" id="keys-panel" hidden>
+      <h3>Typing on a day</h3>
+      <div class="k"><span class="kk"><kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>M</kbd> <kbd>D</kbd> <kbd>X</kbd> <kbd>9</kbd> <kbd>L</kbd> <kbd>O</kbd></span><span>A, B, C, ME, DMG, Xpress, 999, Learning Center, Overgoods. Moves to the next day.</span></div>
+      <div class="k"><span class="kk"><kbd>Shift</kbd>+a letter</span><span>Adds a second area. For 999/B type <kbd>9</kbd> then <kbd>Shift</kbd>+<kbd>B</kbd>.</span></div>
+      <div class="k"><span class="kk"><kbd>-</kbd></span><span>Day off (a regular day off in Regular schedule).</span></div>
+      <div class="k"><span class="kk"><kbd>Backspace</kbd> or <kbd>Delete</kbd></span><span>Clears the day.</span></div>
+      <div class="k"><span class="kk">Arrow keys</span><span>Move to another day.</span></div>
+      <div class="k"><span class="kk"><kbd>Enter</kbd> or <kbd>Space</kbd></span><span>Puts the picked color on the day.</span></div>
+      <h3>Several days at once</h3>
+      <div class="k"><span class="kk"><kbd>Shift</kbd>+arrow keys</span><span>Selects a block of days from the one you are on.</span></div>
+      <div class="k"><span class="kk"><kbd>Shift</kbd>+click</span><span>Selects a block of days (with no color picked).</span></div>
+      <div class="k"><span class="kk"><kbd>Ctrl</kbd>+click</span><span>Adds or removes one day.</span></div>
+      <div class="k"><span class="kk">Type with days selected</span><span>A letter, <kbd>-</kbd> or <kbd>Backspace</kbd> fills every selected day.</span></div>
+      <div class="k"><span class="kk"><kbd>Esc</kbd></span><span>Back to one day. Again to drop the picked color.</span></div>
+      <h3>Copy, paste and the rest</h3>
+      <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>C</kbd></span><span>Copies the selected days, also as text for Excel.</span></div>
+      <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>V</kbd></span><span>Pastes. One copied day fills every selected day; a block repeats to fill them. Time off is never changed.</span></div>
+      <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span><span>Undoes the last change. A paste or a fill is one step.</span></div>
+      <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>P</kbd></span><span>Prints the grid as Screenshot view shows it.</span></div>
+      <div class="k"><span class="kk">Click a heading</span><span>Admin sorts by name; a day groups by area. Click again for My order.</span></div>
+    </div>
 
     <div class="grid-card">
       <div class="scroll"><table id="grid"></table></div>
@@ -381,13 +492,20 @@
       <span><i class="lg-off"></i>OFF*: a day off you added</span>
       <span><i class="lg-chg"></i>Corner mark: changed from the regular schedule</span>
       <span><i class="lg-focus"></i>The day you are typing in</span>
+      <span><i class="lg-sel"></i>Selected days</span>
     </div>
     <p id="save-ok">Every change saves on this computer as you make it.</p>
+    <p class="nudge" id="backup-nudge" hidden><span id="backup-nudge-text"></span><button type="button" class="btn btn-gray" id="nudge-export">Export a backup</button> <span class="msg err" id="nudge-msg" role="alert" hidden></span></p>
   </section>
 
   <details class="settings" id="settings">
     <summary>Settings and backup</summary>
     <div class="body">
+      <div id="settings-dayoff" class="wide">
+        <h3>Regular days off</h3>
+        <p class="muted">A ticked box is a regular day off every week from today, the same as typing <kbd>-</kbd> in Regular schedule. Clear areas leaves these alone. The arrows set My order.</p>
+        <div class="dayoff-wrap"><table id="dayoff-table"></table></div>
+      </div>
       <div id="settings-id">
         <h3>Your employee ID</h3>
         <div class="row">
@@ -489,6 +607,17 @@
   var dismissed = { collisions: {}, statuses: {} };
   var pendingImport = null;
   var personSeq = 0;
+  // Round 2. The selection is extra state layered on the focused day: focus
+  // stays a real focused cell, and `sel` (two or more days) only says which
+  // days a fill, copy or paste reaches. It never survives a change of view,
+  // range, sort or people: render() drops it when its signature differs.
+  var sel = null;            // { anchor: key, keys: [key], sig }
+  var memClip = null;        // { text, block }: the last copy made here (keeps "time off copies nothing")
+  var clipTimer = null;      // the one-off timer that hides the Copied / Pasted line; made on demand
+  var keysOpen = false;
+  var rangeMsg = '';         // why a typed through date was not used (L5)
+  var lastGrid = { ids: [], cols: [], reg: false };
+  var FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   function newPersonId() {
     personSeq += 1;
@@ -517,7 +646,9 @@
   function markStale() {
     if (stale) return;
     stale = true;
-    armedRemove = null; armedClear = false; editing = null; lastTyped = null; drag = null;
+    armedRemove = null; armedClear = false; editing = null; lastTyped = null; drag = null; sel = null;
+    // Screenshot view hides banner buttons (L6); the reload button must show.
+    screenshot = false;
     render();
   }
 
@@ -560,6 +691,7 @@
   function setView(patch) {
     if (readOnly || stale) return;
     lastTyped = null;
+    rangeMsg = '';
     var next = P.setSettings(state, patch);
     if (next === state) { render(); return; }
     state = next;
@@ -571,6 +703,10 @@
   function undo() {
     if (readOnly || stale || !undoStack.length) return;
     var prev = undoStack.pop();
+    // Undoing a change to the people (or My order) redraws the rows; undoing
+    // a day never moves them.
+    var ids = function (s) { return s.people.map(function (p) { return p.id; }).join(','); };
+    if (ids(prev) !== ids(state)) rowOrder = null;
     var keep = {};
     VIEW_KEYS.forEach(function (k) { keep[k] = state.settings[k]; });
     state = Object.assign({}, prev, { settings: Object.assign({}, prev.settings, keep) });
@@ -661,16 +797,19 @@
       $('settings').open = true;
       $('settings-id').hidden = true;
       $('settings-left').hidden = true;
+      $('settings-dayoff').hidden = true;
       $('export').hidden = true;
       renderBackup();
       return;
     }
+    $('settings-dayoff').hidden = false;
     $('settings-id').hidden = false;
     $('settings-left').hidden = false;
     $('export').hidden = false;
     renderBars();
     renderFileZone();
     renderNotices();
+    renderDupWarning();
     renderBrushes();
     renderGrid();
     renderSettings();
@@ -703,6 +842,7 @@
       $('range-from').value = s.from;
       $('range-to').value = last;
       $('range-count').textContent = s.len === 1 ? '1 day' : s.len + ' days';
+      $('range-msg').textContent = rangeMsg;
       Array.prototype.forEach.call(document.querySelectorAll('.quick [data-len]'), function (b) {
         b.setAttribute('aria-pressed', String(Number(b.getAttribute('data-len')) === s.len));
       });
@@ -725,7 +865,9 @@
     } else if (t) {
       var run = String(t.runDate || '').split(' ')[0];
       html += 'Using <b>' + esc(t.fileName || 'the time off file') + '</b>' + (run ? ', run ' + esc(run) : '') + '. ' +
-        t.total + (t.total === 1 ? ' row' : ' rows') + ' in the file, ' + t.mine + ' report to you. Drop a newer file any time; it replaces these rows.';
+        t.total + (t.total === 1 ? ' row' : ' rows') + ' in the file, ' + t.mine + ' report to you.' +
+        (t.period ? ' The file covers ' + mdy(t.period.from) + ' through ' + mdy(t.period.to) + '.' : '') +
+        ' Drop a newer file any time; it replaces these rows.';
     } else {
       html += 'No time off file yet. Choose it or drop it here: Time Off / Submitted Requests Detail, as it comes.';
     }
@@ -777,6 +919,20 @@
         '<button type="button" class="btn btn-gray" data-act="leave-out" data-emp="' + esc(u.employeeId) + '">Leave out</button></div></div>';
     });
     box.innerHTML = html;
+  }
+
+  // Two admins holding one employee ID: shown for as long as it is true, in
+  // both views. Nothing refuses it (a backup of it must restore); only creating
+  // one is refused. The time off file reaches only one of them.
+  function renderDupWarning() {
+    var el = $('dup-warning');
+    var found = P.duplicateEmployeeIds(state);
+    if (!found.length) { el.textContent = ''; el.hidden = true; return; }
+    el.textContent = found.map(function (d) {
+      return (d.names.length === 2 ? 'These two share' : 'These ' + d.names.length + ' share') + ' employee ID ' + d.employeeId + ': ' + d.names.join(' and ') +
+        '. Edit one of them (click the name) to fix it.';
+    }).join(' ');
+    el.hidden = false;
   }
 
   function renderBrushes() {
@@ -841,6 +997,7 @@
     if (wkstart) cls.push('wkstart');
     if (isToday) cls.push('is-today');
     var key = person.id + '|' + (reg ? col.weekday : col.date);
+    if (selSet[key]) cls.push('sel');
     var heading = reg ? DAYS[col.weekday] : dayLabel(col.date);
     var aria = person.name + ', ' + heading + ': ' + (label || 'not placed yet');
     return '<td class="' + cls.join(' ') + '" data-person="' + esc(person.id) + '" ' +
@@ -849,11 +1006,17 @@
       (tip ? ' title="' + esc(tip) + '"' : '') + ' aria-label="' + esc(aria) + '">' + inner + '</td>';
   }
 
+  function isRegularOff(id, wd) { return P.resolveRegular(state, id, wd).kind === 'regularOff'; }
+
   function nameCellHtml(p) {
     if (editing && editing.id === p.id) {
+      var days = '<span class="ed-days" role="group" aria-label="Regular days off"><span>Off</span>' + DAYS.map(function (d, wd) {
+        return '<label title="' + FULL_DAYS[wd] + ' is a regular day off"><input type="checkbox" class="ed-off" data-weekday="' + wd + '"' + (isRegularOff(p.id, wd) ? ' checked' : '') +
+          ' aria-label="' + FULL_DAYS[wd] + ' off">' + d.charAt(0) + '</label>';
+      }).join('') + '</span>';
       return '<th class="name" scope="row"><div class="editor">' +
         '<input type="text" class="ed-name" value="' + esc(p.name) + '" aria-label="Name">' +
-        '<input type="text" class="ed-id" value="' + esc(p.employeeId) + '" placeholder="Employee ID" aria-label="Employee ID" inputmode="numeric">' +
+        '<input type="text" class="ed-id" value="' + esc(p.employeeId) + '" placeholder="Employee ID" aria-label="Employee ID" inputmode="numeric">' + days +
         '<button type="button" class="btn btn-primary" data-act="save-edit" data-id="' + esc(p.id) + '">Save</button>' +
         '<button type="button" class="btn btn-gray" data-act="cancel-edit">Cancel</button>' +
         (editing.error ? '<span class="err">' + esc(editing.error) + '</span>' : '') +
@@ -885,17 +1048,26 @@
     var keys = [];
     order.forEach(function (id) { cols.forEach(function (col) { keys.push(id + '|' + (reg ? col.weekday : col.date)); }); });
     var focusable = keys.indexOf(focusKey) !== -1 ? focusKey : (keys[0] || '');
+    lastGrid = { ids: order.slice(), cols: cols, reg: reg };
+    if (sel && sel.sig !== viewSig()) sel = null;
+    selSet = Object.create(null);
+    if (sel) sel.keys.forEach(function (k) { selSet[k] = true; });
 
-    var h = '<thead><tr><th class="name" scope="col">Admin</th>';
+    var byName = state.settings.sort === 'name';
+    var h = '<thead><tr><th class="name' + (byName ? ' sorted' : '') + '" scope="col"' + (byName ? ' aria-sort="ascending"' : '') + '>' +
+      '<button type="button" class="hd" data-sort="name" title="' + (byName ? 'Back to My order' : 'Sort by name, A to Z') + '">Admin</button></th>';
     cols.forEach(function (col, ci) {
       var cls = [];
+      var past = !reg && P.pastFile(state, col.date);
       if (!reg && ci > 0 && col.weekday === 0) cls.push('wkstart');
       if (!reg && col.date === todayStr) cls.push('today');
       if (ci === sc) cls.push('sorted');
+      if (past) cls.push('pastfile');
       h += '<th scope="col" data-col="' + ci + '"' + (reg ? ' data-weekday="' + col.weekday + '"' : ' data-date="' + col.date + '"') +
-        (cls.length ? ' class="' + cls.join(' ') + '"' : '') +
-        (state.settings.sort === 'area' ? ' title="Sort by who is where on this day"' : '') + '>' +
-        (reg ? '<b>' + DAYS[col.weekday] + '</b>' : DAYS[col.weekday] + '<b>' + md(col.date) + '</b>') + '</th>';
+        (cls.length ? ' class="' + cls.join(' ') + '"' : '') + (ci === sc ? ' aria-sort="other"' : '') + '>' +
+        '<button type="button" class="hd" data-sort="day" title="' + (ci === sc ? 'Back to My order' : 'Group by who is where on this day') + '">' +
+        (reg ? '<b>' + DAYS[col.weekday] + '</b>' : DAYS[col.weekday] + '<b>' + md(col.date) + '</b>') +
+        (past ? '<span class="pf" title="After the last day the time off file covers, so time off here is not known">past file</span>' : '') + '</button></th>';
     });
     h += '<th class="days" scope="col" title="Days worked in the range shown">Days</th></tr></thead><tbody>';
 
@@ -952,6 +1124,42 @@
       ? 'Nobody. Everyone in the file who reports to you and is not on the grid shows in a notice.'
       : (n === 1 ? '1 person is' : n + ' people are') + ' left out, so the notice does not ask about them again.';
     $('clear-left-out').disabled = n === 0;
+    renderDayoff();
+  }
+
+  // Regular days off: one row per admin in My order. Every box reads the
+  // regular schedule, so it always agrees with the grid.
+  function renderDayoff() {
+    var table = $('dayoff-table');
+    var a = document.activeElement;
+    var refocus = null;
+    if (a && table.contains(a)) {
+      var tr = a.closest('tr[data-person]');
+      refocus = tr ? { id: tr.getAttribute('data-person'), wd: a.getAttribute('data-weekday'), move: a.getAttribute('data-move') } : null;
+    }
+    var html = '<thead><tr><th scope="col">Admin</th>' + DAYS.map(function (d, wd) {
+      return '<th scope="col"' + (wd === 0 || wd === 6 ? ' class="wkend"' : '') + ' title="' + FULL_DAYS[wd] + '">' + d + '</th>';
+    }).join('') + '<th scope="col"><span class="sr">My order</span></th></tr></thead><tbody>';
+    if (!state.people.length) html += '<tr><td colspan="9" class="muted">No admins yet. Add them under the grid.</td></tr>';
+    state.people.forEach(function (p, i) {
+      html += '<tr data-person="' + esc(p.id) + '"><th scope="row">' + esc(p.name) + '</th>';
+      for (var wd = 0; wd < 7; wd++) {
+        html += '<td' + (wd === 0 || wd === 6 ? ' class="wkend"' : '') + '><input type="checkbox" data-weekday="' + wd + '"' + (isRegularOff(p.id, wd) ? ' checked' : '') +
+          ' aria-label="' + esc(p.name) + ', ' + FULL_DAYS[wd] + ' is a regular day off"></td>';
+      }
+      html += '<td class="mv"><button type="button" class="btn btn-gray" data-move="-1" aria-label="Move ' + esc(p.name) + ' up"' + (i === 0 ? ' disabled' : '') + '>&uarr;</button>' +
+        '<button type="button" class="btn btn-gray" data-move="1" aria-label="Move ' + esc(p.name) + ' down"' + (i === state.people.length - 1 ? ' disabled' : '') + '>&darr;</button></td></tr>';
+    });
+    table.innerHTML = html + '</tbody>';
+    if (refocus) {
+      var rows = table.querySelectorAll('tr[data-person]');
+      for (var r = 0; r < rows.length; r++) {
+        if (rows[r].getAttribute('data-person') !== refocus.id) continue;
+        var el = refocus.wd !== null ? rows[r].querySelector('input[data-weekday="' + refocus.wd + '"]') : rows[r].querySelector('[data-move="' + refocus.move + '"]');
+        if (el && el.disabled) el = rows[r].querySelector('[data-move]:not([disabled])');
+        if (el) el.focus();
+      }
+    }
   }
 
   function renderBackup() {
@@ -964,6 +1172,111 @@
       $('last-export').textContent = 'Never exported. A backup is the only way back if this browser is cleared.';
     }
     $('import-preview').hidden = !pendingImport;
+    // The quiet nudge: never exported with people in the planner, or more than 14 days ago.
+    var now = Date.now();
+    var due = !readOnly && P.backupDue(at, now, state.people.length);
+    $('backup-nudge').hidden = !due;
+    if (due) {
+      var ago = at ? Math.floor((now - at) / 86400000) : 0;
+      $('backup-nudge-text').textContent = (at ? 'Last backup was ' + ago + ' days ago.' : 'No backup of this schedule yet.') +
+        ' It lives only in this browser.';
+    }
+  }
+
+  // ---- selection, copy and paste ------------------------------------------
+  var selSet = Object.create(null);
+
+  // What the selection belongs to. A change to any of it drops the selection.
+  function viewSig() {
+    var s = state.settings;
+    return [s.view, s.from, s.len, s.sort, sortDate, sortWeekday, state.people.map(function (p) { return p.id; }).join(',')].join('#');
+  }
+  function refFromKey(key) {
+    var cut = key.lastIndexOf('|');
+    var at = key.slice(cut + 1);
+    return /^\d$/.test(at) ? { person: key.slice(0, cut), date: '', weekday: Number(at) } : { person: key.slice(0, cut), date: at, weekday: -1 };
+  }
+  function posOf(key) {
+    if (!key) return null;
+    var ref = refFromKey(key);
+    var row = lastGrid.ids.indexOf(ref.person);
+    var col = -1;
+    for (var i = 0; i < lastGrid.cols.length; i++) {
+      var c = lastGrid.cols[i];
+      if (lastGrid.reg ? c.weekday === ref.weekday : c.date === ref.date) { col = i; break; }
+    }
+    return row === -1 || col === -1 ? null : { row: row, col: col };
+  }
+  function keyAt(pos) {
+    var c = lastGrid.cols[pos.col];
+    return lastGrid.ids[pos.row] + '|' + (lastGrid.reg ? c.weekday : c.date);
+  }
+  // The shown grid as cell references, rows in display order.
+  function gridRefs() {
+    return lastGrid.ids.map(function (id) {
+      return lastGrid.cols.map(function (c) { return lastGrid.reg ? { person: id, weekday: c.weekday } : { person: id, date: c.date }; });
+    });
+  }
+  // The days a fill, copy or paste reaches: the selection, or the focused day.
+  function targetCells() {
+    var keysList = sel ? sel.keys : [focusKey];
+    return keysList.map(posOf).filter(Boolean);
+  }
+  function setSel(anchor, keysList) {
+    sel = keysList.length > 1 ? { anchor: anchor, keys: keysList, sig: viewSig() } : null;
+    paintSel();
+  }
+  // Repaints the selection classes only, so focus and the rows stay put.
+  function paintSel() {
+    selSet = Object.create(null);
+    if (sel) sel.keys.forEach(function (k) { selSet[k] = true; });
+    Array.prototype.forEach.call($('grid').querySelectorAll('td.cell'), function (td) {
+      var on = !!selSet[refKey(refOf(td))];
+      td.classList.toggle('sel', on);
+      if (on) td.setAttribute('aria-selected', 'true'); else td.removeAttribute('aria-selected');
+    });
+  }
+  function collapseSel() { if (sel) { sel = null; paintSel(); } }
+  function extendSel(toKey) {
+    var anchor = sel ? sel.anchor : focusKey;
+    var a = posOf(anchor), b = posOf(toKey);
+    if (!a || !b) { collapseSel(); return; }
+    setSel(anchor, P.rectCells(a, b).map(keyAt));
+  }
+  function toggleSel(k) {
+    var list = sel ? sel.keys.slice() : (focusKey && posOf(focusKey) ? [focusKey] : []);
+    var at = list.indexOf(k);
+    if (at === -1) list.push(k); else list.splice(at, 1);
+    setSel(k, list);
+    // One day left over: that is the day a paste or a key now reaches, so it
+    // is the one that gets focus, not the day that was just removed.
+    return at !== -1 && list.length === 1 ? list[0] : k;
+  }
+  // The shown day with this key (compared, never built into a selector).
+  function tdForKey(key) { return findCell(key); }
+  function gridHasFocus() {
+    var a = document.activeElement;
+    return !!(a && a.closest && a.closest('#grid td.cell'));
+  }
+  function dayCount(n) { return n + (n === 1 ? ' day' : ' days'); }
+  function skippedText(locked, vac) {
+    return locked ? ', skipped ' + locked + (vac === locked ? ' on vacation' : ' on time off') : '';
+  }
+  // The brief confirmation near the grid. One timer, made here, cleared here.
+  function flash(msg) {
+    var el = $('clip-msg');
+    el.textContent = msg;
+    el.hidden = false;
+    if (clipTimer) clearTimeout(clipTimer);
+    clipTimer = setTimeout(function () { el.hidden = true; clipTimer = null; }, 3500);
+  }
+  // Typing with several days selected: one change, one undo step.
+  function fillSel(op, code) {
+    var refs = sel.keys.map(refFromKey);
+    var out = P.fillCells(state, today(), refs, op, code);
+    if (out.state !== state) commit(out.state);
+    if (!out.filled && !out.skippedLocked) { flash('Nothing to change here.'); return; }
+    flash('Filled ' + dayCount(out.filled) + skippedText(out.skippedLocked, out.skippedVacation) + '.');
   }
 
   // ---- focus and keys ---------------------------------------------------
@@ -1000,6 +1313,15 @@
     var nine = (e.code === 'Digit9' && (e.key === '9' || e.key === '(')) || (e.code === 'Numpad9' && e.key === '9');
     var k = nine ? '9' : String(e.key || '').toLowerCase();
     var ref = refOf(td);
+    // Several days selected: a letter, -, Backspace or Delete fills every one
+    // of them (Shift+letter adds), focus stays, and the selection stays.
+    if (sel) {
+      var fillOp = null, fillCode = null;
+      if (Object.prototype.hasOwnProperty.call(KEYS, k)) { fillOp = e.shiftKey ? 'add' : 'set'; fillCode = KEYS[k]; }
+      else if (k === '-' || k === '_' || e.code === 'NumpadSubtract') fillOp = 'off';
+      else if (e.key === 'Backspace' || e.key === 'Delete') fillOp = 'clear';
+      if (fillOp) { e.preventDefault(); lastTyped = null; focusKey = refKey(ref); fillSel(fillOp, fillCode); return; }
+    }
     if (Object.prototype.hasOwnProperty.call(KEYS, k)) {
       e.preventDefault();
       // Shift adds a second area to the cell just typed in, and only while that
@@ -1039,12 +1361,22 @@
       if (brush) { focusKey = refKey(ref); applyBrushOnce(ref, e.shiftKey); }
       return;
     }
-    if (e.key === 'Escape') { brush = null; renderBrushes(); return; }
+    if (e.key === 'Escape') {
+      if (sel) { collapseSel(); return; }
+      brush = null; renderBrushes(); return;
+    }
     var moves = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     if (moves[e.key]) {
       e.preventDefault();
       lastTyped = null;
       var to = neighbour(td, moves[e.key][0], moves[e.key][1]);
+      if (e.shiftKey) {
+        // Shift+arrow: the far corner moves, the anchor stays.
+        if (!sel) focusKey = refKey(ref);
+        if (to) { extendSel(refKey(refOf(to))); focusTd(to); }
+        return;
+      }
+      collapseSel();
       if (to) focusTd(to);
     }
   }
@@ -1094,6 +1426,7 @@
   function handleTimeOffFile(file) {
     if (!file || readOnly || stale) return;
     var name = file.name || 'the file';
+    // The ID the rows are filtered with. Checked again when the read ends (L8).
     var managerId = state.settings.managerId;
     readFileBytes(file).then(function (bytes) {
       return window.SpreadsheetLib.readSpreadsheet(bytes);
@@ -1106,7 +1439,13 @@
         dropMsg = { kind: 'err', text: '0 of ' + parsed.rows.length + ' rows in ' + name + ' report to ' + managerId + ', so nothing changed. Check the ID under Settings and backup.' };
         return;
       }
-      var next = P.applyReport(state, { fileName: name, runDate: parsed.runDate, total: parsed.rows.length, rows: mine }, Date.now());
+      if (state.settings.managerId !== managerId) {
+        // The ID changed while the file was being read: these rows were kept
+        // for the old ID, so none of them may be stored.
+        dropMsg = { kind: 'err', text: name + ' was not used: your employee ID changed while it was being read. Drop the file again.' };
+        return;
+      }
+      var next = P.applyReport(state, { fileName: name, runDate: parsed.runDate, period: parsed.period, total: parsed.rows.length, rows: mine }, Date.now());
       dropMsg = null;
       fileNotices = true;
       dismissed = { collisions: {}, statuses: {} };
@@ -1120,10 +1459,18 @@
   }
 
   // ---- backup -----------------------------------------------------------
-  function exportBackup() {
+  function exportBackup(fromNudge) {
     var data = store.exportAll(state);
     var msg = $('backup-msg');
-    if (!data) { msg.className = 'msg err'; msg.textContent = 'The backup could not be made, because the schedule failed its own checks. Nothing was downloaded.'; return; }
+    var nudgeMsg = $('nudge-msg');
+    nudgeMsg.textContent = ''; nudgeMsg.hidden = true;
+    if (!data) {
+      msg.className = 'msg err';
+      msg.textContent = 'The backup could not be made, because the schedule failed its own checks. Nothing was downloaded.';
+      // Started from the nudge, the error shows by the nudge: Settings may be closed.
+      if (fromNudge === true) { nudgeMsg.textContent = msg.textContent; nudgeMsg.hidden = false; }
+      return;
+    }
     var blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -1205,8 +1552,14 @@
     var td = e.target.closest('td.cell');
     if (!td) return;
     e.preventDefault();
-    focusTd(td);
+    var k = refKey(refOf(td));
     lastTyped = null;
+    // Ctrl+click adds or removes one day; Shift+click (with no color picked;
+    // with one, Shift still adds a second area as before) selects a block.
+    if (e.ctrlKey || e.metaKey) { focusTd(tdForKey(toggleSel(k)) || td); return; }
+    if (e.shiftKey && !brush) { extendSel(k); focusTd(td); return; }
+    collapseSel();
+    focusTd(td);
     if (!brush) return;
     var ref = refOf(td);
     drag = { before: state, mode: dragMode(ref, e.shiftKey), seen: {}, changed: false };
@@ -1214,6 +1567,8 @@
   });
   grid.addEventListener('mouseover', function (e) {
     if (!drag) return;
+    // Released outside the window, the mouseup never came here (L10).
+    if (e.buttons === 0) { drag = null; return; }
     var td = e.target.closest('td.cell');
     if (td) dragOver(refOf(td));
   });
@@ -1225,16 +1580,24 @@
 
   function saveEdit() {
     if (!editing) return;
-    var row = grid.querySelector('tr[data-person="' + editing.id + '"]');
+    var row = null;
+    Array.prototype.forEach.call(grid.querySelectorAll('tbody tr[data-person]'), function (tr) {
+      if (!row && tr.getAttribute('data-person') === editing.id) row = tr;
+    });
     if (!row) { editing = null; render(); return; }
     var name = row.querySelector('input.ed-name').value.trim();
     var eid = row.querySelector('input.ed-id').value.trim();
     var p = personById(editing.id);
     if (!p) { editing = null; render(); return; }
     if (!name) { editing.error = 'Type a name.'; render(); return; }
-    if (eid && P.employeeIdTaken(state, eid, p.id)) { editing.error = 'Another admin already has employee ID ' + eid + '.'; render(); return; }
+    if (eid && eid !== p.employeeId && P.employeeIdTaken(state, eid, p.id)) { editing.error = 'Another admin already has employee ID ' + eid + '.'; render(); return; }
     var next = P.renamePerson(state, p.id, name);
     if (eid !== p.employeeId) next = P.linkPerson(next, p.id, eid);
+    // The editor's regular days off: the same change as the Settings boxes, in
+    // this one Save (one undo step with the rename).
+    Array.prototype.forEach.call(row.querySelectorAll('input.ed-off[data-weekday]'), function (box) {
+      next = P.setRegularOff(next, today(), p.id, Number(box.getAttribute('data-weekday')), box.checked);
+    });
     editing = null;
     if (!commit(next)) render();
   }
@@ -1242,14 +1605,9 @@
   grid.addEventListener('click', function (e) {
     if (readOnly) return;
     var t = e.target.closest('button');
-    var th = e.target.closest('thead th[data-col]');
-    if (!t && th && state.settings.sort === 'area') {
-      if (isRegular()) sortWeekday = Number(th.getAttribute('data-weekday'));
-      else sortDate = th.getAttribute('data-date');
-      rowOrder = null;
-      render();
-      return;
-    }
+    var th = e.target.closest('thead th');
+    var hd = th && th.querySelector('button.hd');
+    if (hd && !stale) { headerSort(th, hd); return; }
     if (!t) { if (armedRemove) { armedRemove = null; render(); } return; }
     if (t.hasAttribute('data-remove')) {
       var id = t.getAttribute('data-remove');
@@ -1261,6 +1619,60 @@
     if (t.hasAttribute('data-edit')) { editing = { id: t.getAttribute('data-edit'), error: '' }; armedRemove = null; render(); return; }
     if (t.getAttribute('data-act') === 'save-edit') { saveEdit(); return; }
     if (t.getAttribute('data-act') === 'cancel-edit') { editing = null; render(); }
+  });
+
+  // A heading click: Admin toggles A to Z and My order; a day groups by its
+  // area, and the same day again goes back to My order. One state with the
+  // Sort picker (settings.sort plus the day), so the picker always shows it.
+  function headerSort(th, hd) {
+    var reg = isRegular();
+    var cols = lastGrid.cols;
+    var cur = reg ? sortWeekday : (cols.some(function (c) { return c.date === sortDate; }) ? sortDate : (cols[0] ? cols[0].date : ''));
+    var clicked = hd.getAttribute('data-sort') === 'name' ? { by: 'name' }
+      : { by: 'area', day: reg ? Number(th.getAttribute('data-weekday')) : th.getAttribute('data-date') };
+    var next = P.headerSort({ sort: state.settings.sort, day: cur }, clicked);
+    var hadFocus = document.activeElement === hd;
+    if (reg) sortWeekday = next.day; else sortDate = next.day;
+    rowOrder = null;
+    setView({ sort: next.sort });
+    // The grid was redrawn: keep keyboard focus on the same heading.
+    var again = $('grid').querySelector(clicked.by === 'name' ? 'thead th.name button.hd' : 'thead th[data-col="' + th.getAttribute('data-col') + '"] button.hd');
+    if (again && hadFocus) again.focus();
+  }
+
+  // Copy and paste: the document's own events, read only while a day on the
+  // grid has focus, so no permission prompt and nothing read in the background.
+  document.addEventListener('copy', function (e) {
+    if (readOnly || stale || !gridHasFocus()) return;
+    var block = P.copyBlock(state, gridRefs(), targetCells());
+    if (!block.length) return;
+    var textOut = P.encodeClipboard(block);
+    memClip = { text: textOut, block: block };
+    if (e.clipboardData && typeof e.clipboardData.setData === 'function') e.clipboardData.setData('text/plain', textOut);
+    e.preventDefault();
+    var n = 0;
+    block.forEach(function (line) { line.forEach(function (tk) { if (tk !== null) n += 1; }); });
+    flash('Copied ' + dayCount(n) + '.');
+  });
+  document.addEventListener('paste', function (e) {
+    if (readOnly || stale || screenshot || !gridHasFocus()) return;
+    e.preventDefault();
+    var dt = e.clipboardData;
+    var textIn = dt && typeof dt.getData === 'function' ? dt.getData('text/plain') : null;
+    var clip = null;
+    // The same text this page copied (line breaks and trailing blanks aside:
+    // a browser may hand it back with LF, or with a trailing newline): use the
+    // copy itself. It knows which cells were really empty (those clear), which
+    // were time off or left out of a ragged selection (those copy nothing and
+    // leave the target alone). In text from anywhere else a blank never clears.
+    if (memClip && (textIn === null || P.sameClipboardText(textIn, memClip.text))) clip = { block: memClip.block, ignored: 0 };
+    else if (textIn) clip = P.decodeClipboard(textIn);
+    if (!clip || !clip.block.length) { flash('Nothing to paste. Copy some days first.'); return; }
+    var r = P.planPaste(state, today(), gridRefs(), targetCells(), clip);
+    if (r.state !== state) commit(r.state);
+    if (!r.pasted && !r.skippedLocked && !r.ignoredTokens) { flash('Nothing to paste here.'); return; }
+    flash('Pasted ' + dayCount(r.pasted) + skippedText(r.skippedLocked, r.skippedVacation) +
+      (r.ignoredTokens ? ', ignored ' + r.ignoredTokens + (r.ignoredTokens === 1 ? ' that is' : ' that are') + ' not an area code' : '') + '.');
   });
 
   $('brushes').addEventListener('click', function (e) {
@@ -1306,15 +1718,55 @@
   $('range-from').addEventListener('change', function () {
     if (P.isIsoDate(this.value)) setView({ from: this.value }); else render();
   });
+  // L5: a through date that cannot be used says why, beside the field, and
+  // the range stays as it was (no silent rewrite to 1 or 31 days).
   $('range-to').addEventListener('change', function () {
+    if (readOnly || stale) return;
     var to = this.value, from = state.settings.from;
-    if (!P.isIsoDate(to)) { render(); return; }
-    var len = 1;
-    if (to > from) {
-      len = P.MAX_LEN;
-      for (var i = 1; i < P.MAX_LEN; i++) if (P.addDays(from, i) === to) { len = i + 1; break; }
+    var r = P.rangeTo(from, to);
+    if (!r.ok) {
+      var last = P.addDays(from, state.settings.len - 1);
+      rangeMsg = r.reason === 'before' ? mdy(to) + ' is before From. The range still ends ' + mdy(last) + '.'
+        : r.reason === 'too-long' ? 'The range can be at most 31 days, so ' + mdy(to) + ' was not used. It still ends ' + mdy(last) + '.'
+        : '';
+      render();
+      return;
     }
-    setView({ len: len });
+    setView({ len: r.len });
+  });
+  $('range-this-week').addEventListener('click', function () { setView(P.weekRange(today(), 0)); });
+  $('range-next-week').addEventListener('click', function () { setView(P.weekRange(today(), 1)); });
+  function setKeys(open) {
+    keysOpen = open;
+    $('keys-panel').hidden = !keysOpen;
+    $('keys-btn').setAttribute('aria-expanded', String(keysOpen));
+  }
+  $('keys-btn').addEventListener('click', function () { setKeys(!keysOpen); });
+  // Esc closes the Keys panel and puts focus back on its button. Captured, so
+  // it runs before the grid's own Esc (which would collapse a selection); with
+  // the panel closed nothing here acts and Esc does what it always did.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !keysOpen) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setKeys(false);
+    $('keys-btn').focus();
+  }, true);
+  $('nudge-export').addEventListener('click', function () { exportBackup(true); });
+
+  // Regular days off table: a box is setRegularOff from today, one undo step;
+  // the arrows move the admin in My order.
+  $('dayoff-table').addEventListener('change', function (e) {
+    var box = e.target.closest('input[data-weekday]');
+    var tr = box && box.closest('tr[data-person]');
+    if (!tr || readOnly || stale) return;
+    if (!commit(P.setRegularOff(state, today(), tr.getAttribute('data-person'), Number(box.getAttribute('data-weekday')), box.checked))) render();
+  });
+  $('dayoff-table').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-move]');
+    var tr = b && b.closest('tr[data-person]');
+    if (!tr || b.disabled || readOnly || stale) return;
+    commit(P.movePerson(state, tr.getAttribute('data-person'), Number(b.getAttribute('data-move'))), { reorder: true });
   });
   document.querySelector('.quick').addEventListener('click', function (e) {
     var b = e.target.closest('[data-len]');
