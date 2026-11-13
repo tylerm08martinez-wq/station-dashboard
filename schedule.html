@@ -230,6 +230,15 @@
     #grid td.off, #grid td.tooff { background: var(--sp-off-bg); color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; }
     #grid td.vac { background: repeating-linear-gradient(135deg, var(--sp-vac-a) 0 8px, var(--sp-vac-b) 8px 16px); color: var(--sp-vac-ink); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; }
     #grid td.locked { cursor: not-allowed; }
+    /* Round 3: vacation set by hand reads like file vacation; only a small
+       corner mark and the tip tell them apart. Hidden in Screenshot view and print. */
+    #grid td.hand::before { content: ""; position: absolute; top: 0; left: 0; border: 5px solid transparent; border-top-color: var(--sp-vac-ink); border-left-color: var(--sp-vac-ink); }
+    .hidden-note { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); border-left: 3px solid var(--sp-asked); padding: 2px 0 2px 10px; }
+    .hidden-note .btn { padding: 2px 10px; }
+    .cell-menu { position: fixed; z-index: 50; min-width: 220px; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2); }
+    .cell-menu li { padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .cell-menu li:hover { background: var(--hover-soft); }
+    .cell-menu li:focus { outline: none; background: var(--hover-soft); box-shadow: inset 0 0 0 2px var(--sp-focus); }
     /* Asked off: a dashed outline, drawn only while the root says so. Focus is
        a solid inset ring in another color, so the two never read alike. */
     body.show-asked #grid td.asked { outline: 2px dashed var(--sp-asked); outline-offset: -5px; }
@@ -256,6 +265,7 @@
     .legend i { display: inline-block; width: 22px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--border-strong); }
     .legend .lg-off { background: var(--sp-off-bg); }
     .legend .lg-vac { background: repeating-linear-gradient(135deg, var(--sp-vac-a) 0 4px, var(--sp-vac-b) 4px 8px); }
+    .legend .lg-hand { background: linear-gradient(135deg, var(--sp-vac-ink) 0 26%, transparent 26%), repeating-linear-gradient(135deg, var(--sp-vac-a) 0 4px, var(--sp-vac-b) 4px 8px); }
     .legend .lg-asked { background: var(--surface); border: 2px dashed var(--sp-asked); }
     .legend .lg-chg { background: linear-gradient(225deg, var(--text) 0 32%, var(--surface) 32%); }
     .legend .lg-focus { background: var(--surface); box-shadow: inset 0 0 0 2px var(--sp-focus); border: 0; }
@@ -315,7 +325,8 @@
     body.screenshot #grid .noid,
     body.screenshot .theme-toggle { display: none !important; }
     body.screenshot .bar-2 { background: none; border: 0; padding: 0; justify-content: flex-end; }
-    body.screenshot #grid td.chg::before { display: none; }
+    body.screenshot #grid td.chg::before, body.screenshot #grid td.hand::before { display: none; }
+    body.screenshot .cell-menu, body.screenshot .hidden-note { display: none !important; }
     body.screenshot #grid td.asked { outline: none; }
     body.screenshot #grid td.asked::after { display: none; }
     body.screenshot #grid .nm { cursor: default; }
@@ -338,7 +349,8 @@
       .scroll { overflow: visible; }
       .grid-card { border-color: var(--border-strong); }
       #grid .name { position: static; }
-      #grid td.chg::before, body.show-asked #grid td.asked::after { display: none; }
+      #grid td.chg::before, #grid td.hand::before, body.show-asked #grid td.asked::after { display: none; }
+      .cell-menu, .hidden-note { display: none !important; }
       body.show-asked #grid td.asked { outline: none; }
       #grid td.cell.sel, #grid td.cell:focus { box-shadow: none; }
     }
@@ -451,20 +463,24 @@
     <div class="hint-row">
       <p class="hint">Click a day and type its area letter, or pick a color and click days. <button type="button" class="keys-btn" id="keys-btn" aria-expanded="false" aria-controls="keys-panel">Keys</button></p>
       <p class="clip-msg" id="clip-msg" role="status" aria-live="polite" hidden></p>
+      <p class="hidden-note" id="hidden-note" role="status" hidden><span id="hidden-note-text"></span><button type="button" class="btn btn-gray" id="show-hidden">Show them</button></p>
     </div>
     <div class="keys-panel" id="keys-panel" hidden>
       <h3>Typing on a day</h3>
       <div class="k"><span class="kk"><kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd> <kbd>M</kbd> <kbd>D</kbd> <kbd>X</kbd> <kbd>9</kbd> <kbd>L</kbd> <kbd>O</kbd></span><span>A, B, C, ME, DMG, Xpress, 999, Learning Center, Overgoods. Moves to the next day.</span></div>
       <div class="k"><span class="kk"><kbd>Shift</kbd>+a letter</span><span>Adds a second area. For 999/B type <kbd>9</kbd> then <kbd>Shift</kbd>+<kbd>B</kbd>.</span></div>
       <div class="k"><span class="kk"><kbd>-</kbd></span><span>Day off (a regular day off in Regular schedule).</span></div>
-      <div class="k"><span class="kk"><kbd>Backspace</kbd> or <kbd>Delete</kbd></span><span>Clears the day.</span></div>
+      <div class="k"><span class="kk"><kbd>Backspace</kbd> or <kbd>Delete</kbd></span><span>Clears the day. On one day of vacation you set by hand, it removes the vacation. With several days selected, or with the Clear brush, vacation you set by hand is skipped.</span></div>
+      <div class="k"><span class="kk"><kbd>V</kbd></span><span>Marks the day, or every selected day, as vacation (VAC). Press it again to remove. Specific dates only.</span></div>
+      <div class="k"><span class="kk"><kbd>H</kbd></span><span>Hides the asked-off request on the day, or on every selected day. Press it again to show it. Specific dates only.</span></div>
+      <div class="k"><span class="kk"><kbd>Enter</kbd> or right-click</span><span>On a day with an asked-off request or hand-set vacation, opens a small menu. The menu key does the same.</span></div>
       <div class="k"><span class="kk">Arrow keys</span><span>Move to another day.</span></div>
       <div class="k"><span class="kk"><kbd>Enter</kbd> or <kbd>Space</kbd></span><span>Puts the picked color on the day.</span></div>
       <h3>Several days at once</h3>
       <div class="k"><span class="kk"><kbd>Shift</kbd>+arrow keys</span><span>Selects a block of days from the one you are on.</span></div>
       <div class="k"><span class="kk"><kbd>Shift</kbd>+click</span><span>Selects a block of days (with no color picked).</span></div>
       <div class="k"><span class="kk"><kbd>Ctrl</kbd>+click</span><span>Adds or removes one day.</span></div>
-      <div class="k"><span class="kk">Type with days selected</span><span>A letter, <kbd>-</kbd> or <kbd>Backspace</kbd> fills every selected day.</span></div>
+      <div class="k"><span class="kk">Type with days selected</span><span>A letter, <kbd>-</kbd> or <kbd>Backspace</kbd> fills every selected day. Vacation you set by hand is skipped; press <kbd>V</kbd> to remove it.</span></div>
       <div class="k"><span class="kk"><kbd>Esc</kbd></span><span>Back to one day. Again to drop the picked color.</span></div>
       <h3>Copy, paste and the rest</h3>
       <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>C</kbd></span><span>Copies the selected days, also as text for Excel.</span></div>
@@ -473,6 +489,8 @@
       <div class="k"><span class="kk"><kbd>Ctrl</kbd>+<kbd>P</kbd></span><span>Prints the grid as Screenshot view shows it.</span></div>
       <div class="k"><span class="kk">Click a heading</span><span>Admin sorts by name; a day groups by area. Click again for My order.</span></div>
     </div>
+
+    <ul class="cell-menu" id="cell-menu" role="menu" aria-label="This day" hidden></ul>
 
     <div class="grid-card">
       <div class="scroll"><table id="grid"></table></div>
@@ -487,6 +505,7 @@
     <div class="legend" id="legend">
       <span><i class="lg-off"></i>OFF: regular day off</span>
       <span><i class="lg-vac"></i>VAC: vacation in the time off file</span>
+      <span><i class="lg-hand"></i>VAC with a corner mark: vacation you set by hand</span>
       <span><i class="lg-off"></i>OFF from the file: other approved time off</span>
       <span class="lg-asked-item"><i class="lg-asked"></i>Asked off, not approved yet</span>
       <span><i class="lg-off"></i>OFF*: a day off you added</span>
@@ -647,6 +666,7 @@
     if (stale) return;
     stale = true;
     armedRemove = null; armedClear = false; editing = null; lastTyped = null; drag = null; sel = null;
+    closeMenu(false);
     // Screenshot view hides banner buttons (L6); the reload button must show.
     screenshot = false;
     render();
@@ -754,6 +774,13 @@
     var k = shown(ref).kind;
     return isReg(ref) ? k === 'regularOff' : (k === 'dayoff' || k === 'regularOff');
   }
+  function isHandVac(ref) { return !isReg(ref) && P.overrideOf(state, ref.person, ref.date) === 'vac'; }
+  // Hand-set vacation on or off for one day, as a state (the brush's step).
+  function vacEdit(s, ref, on) {
+    if (isReg(ref)) return s;
+    if ((P.overrideOf(s, ref.person, ref.date) === 'vac') === on) return s;
+    return P.toggleVacation(s, [{ person: ref.person, date: ref.date }]).state;
+  }
   function isHandOff(ref) {
     var k = shown(ref).kind;
     return isReg(ref) ? k === 'regularOff' : k === 'dayoff';
@@ -811,6 +838,7 @@
     renderNotices();
     renderDupWarning();
     renderBrushes();
+    renderHiddenNote();
     renderGrid();
     renderSettings();
     renderBackup();
@@ -935,6 +963,15 @@
     el.hidden = false;
   }
 
+  // Round 3: a request hidden by hand is never forgotten silently. Specific
+  // dates only; counts the people and days in view.
+  function renderHiddenNote() {
+    var el = $('hidden-note');
+    var n = isRegular() ? 0 : P.hiddenAskedCount(state, dates());
+    el.hidden = !n;
+    $('hidden-note-text').textContent = n ? n + (n === 1 ? ' asked-off request hidden by you' : ' asked-off requests hidden by you') : '';
+  }
+
   function renderBrushes() {
     var reg = isRegular();
     var list = P.AREAS.map(function (a) { return { id: a.code, label: a.code === 'XP' ? 'Xpress' : (a.code === 'LC' ? 'Learning' : (a.code === 'OG' ? 'Overgoods' : a.code)), cls: 'chip k-' + a.code, title: a.name + ', key ' + a.key.toUpperCase() }; });
@@ -944,6 +981,7 @@
     });
     html += '<span class="sep"></span>';
     html += '<button type="button" class="brush plain" data-brush="off" aria-pressed="' + (brush === 'off') + '" title="Key -">' + (reg ? 'Regular day off' : 'Day off') + '</button>';
+    if (!reg) html += '<button type="button" class="brush plain" data-brush="vac" aria-pressed="' + (brush === 'vac') + '" title="Vacation set by hand, key V">VAC</button>';
     html += '<button type="button" class="brush plain" data-brush="clear" aria-pressed="' + (brush === 'clear') + '" title="Key Backspace">Clear</button>';
     $('brushes').innerHTML = html;
   }
@@ -981,7 +1019,11 @@
     } else {
       r = P.resolve(state, person.id, col.date);
       tip = r.tip || '';
-      if (r.kind === 'timeoff') {
+      if (r.kind === 'timeoff' && r.hand) {
+        cls.push('vac', 'hand');
+        inner = 'VAC';
+        label = 'vacation, set by hand';
+      } else if (r.kind === 'timeoff') {
         cls.push('locked', r.label === 'VAC' ? 'vac' : 'tooff');
         inner = esc(r.label);
         label = 'time off, locked';
@@ -1003,6 +1045,7 @@
     return '<td class="' + cls.join(' ') + '" data-person="' + esc(person.id) + '" ' +
       (reg ? 'data-weekday="' + col.weekday + '"' : 'data-date="' + col.date + '"') +
       ' data-col="' + ci + '" tabindex="' + (focusable === key ? '0' : '-1') + '"' +
+      (!reg && (r.hasRequest || r.hand) ? ' aria-haspopup="menu"' : '') +
       (tip ? ' title="' + esc(tip) + '"' : '') + ' aria-label="' + esc(aria) + '">' + inner + '</td>';
   }
 
@@ -1276,8 +1319,92 @@
     var out = P.fillCells(state, today(), refs, op, code);
     if (out.state !== state) commit(out.state);
     if (!out.filled && !out.skippedLocked) { flash('Nothing to change here.'); return; }
-    flash('Filled ' + dayCount(out.filled) + skippedText(out.skippedLocked, out.skippedVacation) + '.');
+    flash((op === 'clear' ? 'Cleared ' : 'Filled ') + dayCount(out.filled) + skippedText(out.skippedLocked, out.skippedVacation) + '.');
   }
+
+  // ---- round 3: hand-set vacation and hidden requests ---------------------
+  function requestWord(n) { return n + (n === 1 ? ' request' : ' requests'); }
+  function lockedNote(n) { return n ? ', skipped ' + n + ' on time off from the file' : ''; }
+
+  // V: one change, one undo step, for the given { person, date } days.
+  function doVacation(refs) {
+    var out = P.toggleVacation(state, refs);
+    if (out.op === 'none') { flash(out.skippedLocked ? 'Time off from the file cannot be changed.' : 'Nothing to change here.'); return; }
+    if (!commit(out.state, { keepTyped: false })) return;
+    flash((out.op === 'set' ? 'Marked ' + dayCount(out.changed) + ' as vacation' : 'Removed vacation from ' + dayCount(out.changed)) + lockedNote(out.skippedLocked) + '.');
+  }
+  // H: only days that carry an asked-off request count.
+  function doHide(refs) {
+    var out = P.toggleHideAsked(state, refs);
+    if (out.op === 'none') { flash('No asked-off request here to hide.'); return; }
+    if (!commit(out.state)) return;
+    flash((out.op === 'hide' ? 'Hid ' + requestWord(out.changed) : 'Showed ' + requestWord(out.changed) + ' again') + '.');
+  }
+
+  // The small menu on a day with an asked-off request or hand-set vacation.
+  var menu = null;           // { key, ref } while open
+  function menuItemsFor(ref) {
+    if (isReg(ref)) return [];
+    var r = P.resolve(state, ref.person, ref.date);
+    if (r.hand) return [{ id: 'unvac', label: 'Remove vacation' }];
+    if (!r.hasRequest) return [];
+    return r.askedHidden
+      ? [{ id: 'show', label: 'Show this request again' }, { id: 'vac', label: 'Mark as vacation (VAC)' }]
+      : [{ id: 'vac', label: 'Mark as vacation (VAC)' }, { id: 'hide', label: 'Hide this request' }];
+  }
+  function closeMenu(refocus) {
+    if (!menu) return;
+    var key = menu.key;
+    menu = null;
+    var el = $('cell-menu');
+    el.hidden = true;
+    el.innerHTML = '';
+    if (refocus) { var td = findCell(key); if (td) td.focus(); }
+  }
+  function openMenu(td) {
+    if (readOnly || stale || screenshot) return false;
+    var ref = refOf(td);
+    var items = menuItemsFor(ref);
+    if (!items.length) return false;
+    var el = $('cell-menu');
+    el.innerHTML = items.map(function (it) {
+      return '<li role="menuitem" tabindex="-1" data-menu="' + it.id + '">' + esc(it.label) + '</li>';
+    }).join('');
+    var box = td.getBoundingClientRect();
+    el.style.left = Math.max(4, Math.min(box.left, window.innerWidth - 240)) + 'px';
+    el.style.top = Math.max(4, Math.min(box.bottom, window.innerHeight - 24 - items.length * 34)) + 'px';
+    el.hidden = false;
+    menu = { key: refKey(ref), ref: ref };
+    el.firstChild.focus();
+    return true;
+  }
+  function menuAct(id) {
+    var m = menu;
+    if (!m) return;
+    closeMenu(false);
+    var cell = [{ person: m.ref.person, date: m.ref.date }];
+    if (id === 'vac' || id === 'unvac') doVacation(cell); else if (id === 'hide' || id === 'show') doHide(cell);
+    var td = findCell(m.key);
+    if (td) focusTd(td);
+  }
+  $('cell-menu').addEventListener('keydown', function (e) {
+    var items = Array.prototype.slice.call($('cell-menu').querySelectorAll('[role="menuitem"]'));
+    var at = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(at + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(at - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (at !== -1) menuAct(items[at].getAttribute('data-menu')); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(true); }
+    else if (e.key === 'Tab') { e.preventDefault(); closeMenu(true); }
+  });
+  $('cell-menu').addEventListener('click', function (e) {
+    var li = e.target.closest('[data-menu]');
+    if (li) menuAct(li.getAttribute('data-menu'));
+  });
+  document.addEventListener('mousedown', function (e) {
+    if (menu && !e.target.closest('#cell-menu')) closeMenu(false);
+  }, true);
 
   // ---- focus and keys ---------------------------------------------------
   function focusTd(td) {
@@ -1299,7 +1426,11 @@
   // Edit one cell from a key or a click, keep focus where it belongs.
   function editCell(ref, op, code) {
     var next = edited(state, ref, op, code);
-    if (next === state) return false;
+    if (next === state) {
+      // Typing over vacation set by hand changes nothing. Say why.
+      if (op !== 'clear' && isHandVac(ref)) flash('On vacation. Press V to remove it first.');
+      return false;
+    }
     return commit(next, { keepTyped: true });
   }
 
@@ -1313,6 +1444,21 @@
     var nine = (e.code === 'Digit9' && (e.key === '9' || e.key === '(')) || (e.code === 'Numpad9' && e.key === '9');
     var k = nine ? '9' : String(e.key || '').toLowerCase();
     var ref = refOf(td);
+    // Round 3. V marks vacation and H hides an asked-off request, on the day or
+    // on every selected day; neither is an area key. Specific dates only.
+    if ((k === 'v' || k === 'h') && !Object.prototype.hasOwnProperty.call(KEYS, k)) {
+      e.preventDefault();
+      if (isReg(ref)) return;
+      var refs3 = (sel ? sel.keys : [refKey(ref)]).map(refFromKey);
+      lastTyped = null;
+      focusKey = refKey(ref);
+      if (k === 'v') doVacation(refs3); else doHide(refs3);
+      return;
+    }
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      if (openMenu(td)) e.preventDefault();
+      return;
+    }
     // Several days selected: a letter, -, Backspace or Delete fills every one
     // of them (Shift+letter adds), focus stays, and the selection stays.
     if (sel) {
@@ -1359,6 +1505,7 @@
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       if (brush) { focusKey = refKey(ref); applyBrushOnce(ref, e.shiftKey); }
+      else if (e.key === 'Enter' && openMenu(td)) focusKey = refKey(ref);
       return;
     }
     if (e.key === 'Escape') {
@@ -1384,12 +1531,15 @@
   // ---- brush and drag ---------------------------------------------------
   function dragMode(ref, shift) {
     if (brush === 'clear') return 'clear';
+    if (brush === 'vac') return isHandVac(ref) ? 'vacUnset' : 'vacSet';
     if (brush === 'off') return isHandOff(ref) ? 'offUnset' : 'offSet';
     if (shift) return 'add';
     return holdsOnly(ref, brush) ? 'areaUnset' : 'areaSet';
   }
   function applyMode(s, ref, mode) {
-    if (mode === 'clear') return edited(s, ref, 'clear');
+    // The brush never removes vacation set by hand; the day is skipped.
+    if (mode === 'clear') return P.fillCells(s, today(), [ref], 'clear').state;
+    if (mode === 'vacSet' || mode === 'vacUnset') return vacEdit(s, ref, mode === 'vacSet');
     if (mode === 'offSet') return isOffHere(ref) ? s : edited(s, ref, 'offToggle');
     if (mode === 'offUnset') return isHandOff(ref) ? edited(s, ref, 'offToggle') : s;
     if (mode === 'add') return edited(s, ref, 'add', brush);
@@ -1397,7 +1547,9 @@
     return edited(s, ref, 'set', brush);
   }
   function applyBrushOnce(ref, shift) {
-    var next = applyMode(state, ref, dragMode(ref, shift));
+    var mode = dragMode(ref, shift);
+    var next = applyMode(state, ref, mode);
+    if (mode === 'clear' && isHandVac(ref)) flash('Cleared 0 days, skipped 1 on vacation.');
     if (next !== state) commit(next);
   }
   function dragOver(ref) {
@@ -1405,6 +1557,7 @@
     if (drag.seen[k]) return;
     drag.seen[k] = true;
     var next = applyMode(state, ref, drag.mode);
+    if (drag.mode === 'clear') { if (isHandVac(ref)) drag.vacSkipped += 1; else if (next !== state) drag.cleared += 1; }
     if (next === state) return;
     if (!drag.changed) { pushUndo(drag.before); drag.changed = true; }
     state = next;
@@ -1504,7 +1657,9 @@
       msg.textContent = '';
       $('import-summary').textContent = 'This backup holds ' + s.people + (s.people === 1 ? ' admin, ' : ' admins, ') + s.datedDays + ' days set by hand, ' +
         s.regularVersions + ' regular schedule ' + (s.regularVersions === 1 ? 'version' : 'versions') + ' and ' + s.timeOffRows + ' time off rows. ' +
-        (readOnly ? 'It replaces the schedule this computer cannot read.' : 'It replaces everything in the planner on this computer.');
+        (readOnly ? 'It replaces the schedule this computer cannot read.' : 'It replaces everything in the planner on this computer.') +
+        (s.handVacation ? ' It holds ' + dayCount(s.handVacation) + ' of vacation set by hand.' : '') +
+        (s.hiddenRequests ? ' It hides ' + requestWord(s.hiddenRequests) + ' from the time off file.' : '');
       renderBackup();
     };
     reader.onerror = function () { msg.className = 'msg err'; msg.textContent = 'The file could not be opened.'; };
@@ -1562,7 +1717,7 @@
     focusTd(td);
     if (!brush) return;
     var ref = refOf(td);
-    drag = { before: state, mode: dragMode(ref, e.shiftKey), seen: {}, changed: false };
+    drag = { before: state, mode: dragMode(ref, e.shiftKey), seen: {}, changed: false, cleared: 0, vacSkipped: 0 };
     dragOver(ref);
   });
   grid.addEventListener('mouseover', function (e) {
@@ -1572,7 +1727,29 @@
     var td = e.target.closest('td.cell');
     if (td) dragOver(refOf(td));
   });
-  document.addEventListener('mouseup', function () { drag = null; });
+  document.addEventListener('mouseup', function () {
+    if (drag && drag.mode === 'clear' && drag.vacSkipped) {
+      flash('Cleared ' + dayCount(drag.cleared) + ', skipped ' + drag.vacSkipped + ' on vacation.');
+    }
+    drag = null;
+  });
+  grid.addEventListener('contextmenu', function (e) {
+    var td = e.target.closest ? e.target.closest('td.cell') : null;
+    if (!td || readOnly || stale || screenshot || !menuItemsFor(refOf(td)).length) return;
+    e.preventDefault();
+    lastTyped = null;
+    collapseSel();
+    focusTd(td);
+    openMenu(td);
+  });
+  $('show-hidden').addEventListener('click', function () {
+    if (readOnly || stale) return;
+    var n = P.hiddenAskedCount(state, dates());
+    if (!n || !commit(P.showHiddenAsked(state, dates()))) return;
+    flash('Showed ' + requestWord(n) + ' again.');
+    var td = findCell(focusKey);
+    if (td) td.focus();
+  });
   grid.addEventListener('focusin', function (e) {
     var td = e.target.closest && e.target.closest('td.cell');
     if (td) focusKey = refKey(refOf(td));
@@ -1672,7 +1849,8 @@
     if (r.state !== state) commit(r.state);
     if (!r.pasted && !r.skippedLocked && !r.ignoredTokens) { flash('Nothing to paste here.'); return; }
     flash('Pasted ' + dayCount(r.pasted) + skippedText(r.skippedLocked, r.skippedVacation) +
-      (r.ignoredTokens ? ', ignored ' + r.ignoredTokens + (r.ignoredTokens === 1 ? ' that is' : ' that are') + ' not an area code' : '') + '.');
+      (r.ignoredTokens - (r.ignoredVacation || 0) ? ', ignored ' + (r.ignoredTokens - (r.ignoredVacation || 0)) + (r.ignoredTokens - (r.ignoredVacation || 0) === 1 ? ' that is' : ' that are') + ' not an area code' : '') +
+      (r.ignoredVacation ? ', ignored ' + r.ignoredVacation + ' VAC (vacation is a date, not a weekday)' : '') + '.');
   });
 
   $('brushes').addEventListener('click', function (e) {
@@ -1710,7 +1888,7 @@
     if (document.activeElement && document.activeElement.blur && screenshot) document.activeElement.blur();
     render();
   });
-  $('view-regular').addEventListener('click', function () { brush = brush === 'off' ? null : brush; lastTyped = null; setView({ view: 'regular' }); });
+  $('view-regular').addEventListener('click', function () { brush = brush === 'off' || brush === 'vac' ? null : brush; lastTyped = null; closeMenu(false); setView({ view: 'regular' }); });
   $('view-dates').addEventListener('click', function () { lastTyped = null; setView({ view: 'dates' }); });
   $('sort').addEventListener('change', function () { setView({ sort: this.value }); });
   $('show-asked').addEventListener('change', function () { setView({ showAskedOff: this.checked }); });
@@ -1749,6 +1927,8 @@
     if (e.key !== 'Escape' || !keysOpen) return;
     e.preventDefault();
     e.stopPropagation();
+    // An open cell menu closes first and is never left open behind the panel.
+    if (menu) { closeMenu(true); return; }
     setKeys(false);
     $('keys-btn').focus();
   }, true);
